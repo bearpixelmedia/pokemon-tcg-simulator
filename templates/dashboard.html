@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Pokémon TCG Simulator</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            background: #0f172a;
+            color: #e2e8f0;
+            margin: 0;
+            padding: 20px;
+        }
+
+        main {
+            max-width: 980px;
+            margin: 0 auto;
+            display: grid;
+            gap: 16px;
+        }
+
+        .card {
+            background: #1e293b;
+            border-radius: 12px;
+            padding: 18px;
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+        }
+
+        h1, h2, h3 {
+            margin-top: 0;
+        }
+
+        .row {
+            display: grid;
+            gap: 10px;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            align-items: start;
+        }
+
+        textarea, select, input {
+            width: 100%;
+            background: #0b1220;
+            color: #e2e8f0;
+            border: 1px solid #334155;
+            border-radius: 8px;
+            padding: 10px;
+            box-sizing: border-box;
+        }
+
+        button {
+            background: #2563eb;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 10px 14px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+
+        button:hover {
+            background: #1d4ed8;
+        }
+
+        pre {
+            margin: 0;
+            background: #0b1220;
+            border: 1px solid #334155;
+            border-radius: 8px;
+            padding: 12px;
+            overflow-x: auto;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .muted {
+            color: #93c5fd;
+            font-size: 0.92rem;
+        }
+    </style>
+</head>
+<body>
+    <main>
+        <section class="card">
+            <h1>🎴 Pokémon TCG Simulator</h1>
+            <p class="muted">
+                Data-driven card wording compiler: text -> effect operations -> reusable blueprints.
+            </p>
+        </section>
+
+        <section class="card">
+            <h2>AI vs AI Simulation</h2>
+            <button onclick="runSimulation()">Run Simulation</button>
+            <pre id="simulation-output">Click "Run Simulation" to execute a blueprint-driven battle.</pre>
+        </section>
+
+        <section class="card">
+            <h2>Card Text Compiler</h2>
+            <p class="muted">Paste card text and compile it into normalized operations.</p>
+            <textarea id="card-text" rows="4">30 damage. Your opponent's Active Pokémon is now Poisoned.</textarea>
+            <div style="margin-top: 10px;">
+                <button onclick="compileText()">Compile Text</button>
+            </div>
+            <pre id="compiler-output">Compiler output will appear here.</pre>
+        </section>
+
+        <section class="card">
+            <h2>Blueprint Builder</h2>
+            <div class="row">
+                <div>
+                    <label for="blueprint-select">Blueprint</label>
+                    <select id="blueprint-select"></select>
+                </div>
+                <div>
+                    <label for="blueprint-vars">Variables (JSON)</label>
+                    <textarea id="blueprint-vars" rows="4">{}</textarea>
+                </div>
+            </div>
+            <div style="margin-top: 10px;">
+                <button onclick="buildCard()">Build Card From Blueprint</button>
+            </div>
+            <pre id="blueprint-output">Blueprint output will appear here.</pre>
+        </section>
+    </main>
+
+    <script>
+        function pretty(data) {
+            return JSON.stringify(data, null, 2);
+        }
+
+        async function runSimulation() {
+            const output = document.getElementById('simulation-output');
+            output.textContent = 'Running simulation...';
+
+            try {
+                const response = await fetch('/run_sim', { method: 'POST' });
+                const data = await response.json();
+                output.textContent = pretty(data);
+            } catch (error) {
+                output.textContent = `Simulation error: ${error.message}`;
+            }
+        }
+
+        async function compileText() {
+            const output = document.getElementById('compiler-output');
+            const text = document.getElementById('card-text').value;
+            output.textContent = 'Compiling...';
+
+            try {
+                const response = await fetch('/compile_text', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text })
+                });
+                const data = await response.json();
+                output.textContent = pretty(data);
+            } catch (error) {
+                output.textContent = `Compiler error: ${error.message}`;
+            }
+        }
+
+        async function loadBlueprints() {
+            const select = document.getElementById('blueprint-select');
+            const vars = document.getElementById('blueprint-vars');
+
+            try {
+                const response = await fetch('/blueprints');
+                const data = await response.json();
+
+                select.innerHTML = '';
+                for (const blueprint of data.blueprints) {
+                    const option = document.createElement('option');
+                    option.value = blueprint.key;
+                    option.textContent = `${blueprint.name} (${blueprint.key})`;
+                    option.dataset.defaults = JSON.stringify(blueprint.defaults || {});
+                    select.appendChild(option);
+                }
+
+                if (select.options.length > 0) {
+                    vars.value = select.options[0].dataset.defaults || '{}';
+                }
+            } catch (error) {
+                select.innerHTML = '<option value="">Failed to load blueprints</option>';
+                vars.value = '{}';
+            }
+        }
+
+        document.getElementById('blueprint-select').addEventListener('change', (event) => {
+            const defaults = event.target.selectedOptions[0]?.dataset.defaults || '{}';
+            document.getElementById('blueprint-vars').value = defaults;
+        });
+
+        async function buildCard() {
+            const output = document.getElementById('blueprint-output');
+            const blueprintKey = document.getElementById('blueprint-select').value;
+            const varsRaw = document.getElementById('blueprint-vars').value;
+            let variables;
+
+            try {
+                variables = JSON.parse(varsRaw);
+            } catch (error) {
+                output.textContent = `Invalid JSON variables: ${error.message}`;
+                return;
+            }
+
+            output.textContent = 'Building card...';
+            try {
+                const response = await fetch('/build_card', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ blueprint_key: blueprintKey, variables })
+                });
+                const data = await response.json();
+                output.textContent = pretty(data);
+            } catch (error) {
+                output.textContent = `Build error: ${error.message}`;
+            }
+        }
+
+        loadBlueprints();
+    </script>
+</body>
+</html>

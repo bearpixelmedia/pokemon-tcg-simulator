@@ -1,3 +1,5 @@
-def apply_status_effects(active):
-    if active and "poisoned" in active.get("status", []):
-        active["hp"] = max(0, active.get("hp", 0) - 10)
+"""Backward-compatible exports for legacy imports."""
+
+from core.effects import apply_pokemon_checkup as apply_status_effects
+
+__all__ = ["apply_status_effects"]
