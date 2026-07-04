@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Pokémon TCG Simulator</title>
+    <style>
+        body { font-family: system-ui; background: #0f172a; color: #e2e8f0; padding: 20px; max-width: 700px; margin: 0 auto; }
+        button { background: #2563eb; color: white; border: none; padding: 14px 32px; font-size: 16px; border-radius: 8px; cursor: pointer; }
+        pre { background: #1e2937; padding: 16px; border-radius: 8px; overflow-x: auto; }
+    </style>
+</head>
+<body>
+    <h1>🎴 Pokémon TCG Simulator</h1>
+    <p>Full engine • Status mechanics • AI simulation</p>
+    
+    <button onclick="runSim()">Run Simulation</button>
+    
+    <h3>Result</h3>
+    <pre id="log">Click the button above</pre>
+
+    <script>
+        async function runSim() {
+            const log = document.getElementById('log');
+            log.textContent = 'Running simulation...';
+            const res = await fetch('/run_sim', {method: 'POST'});
+            const data = await res.json();
+            log.textContent = JSON.stringify(data, null, 2);
+        }
+    </script>
+</body>
+</html>
