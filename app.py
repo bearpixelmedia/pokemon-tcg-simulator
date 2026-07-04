@@ -10,6 +10,7 @@ from sim.game import (
     build_blueprint_card,
     run_full_yolo_pass,
     run_simulation,
+    verify_simulation_replay,
 )
 
 app = Flask(__name__)
@@ -20,7 +21,42 @@ def dashboard():
 
 @app.route('/run_sim', methods=['POST'])
 def run_sim():
-    return jsonify(run_simulation())
+    payload = request.get_json(silent=True) or {}
+    turn_limit = payload.get("turn_limit", 10)
+    seed = payload.get("seed")
+
+    try:
+        turn_limit = int(turn_limit)
+    except (TypeError, ValueError):
+        return jsonify({"error": "turn_limit must be an integer."}), 400
+
+    if seed is not None:
+        try:
+            seed = int(seed)
+        except (TypeError, ValueError):
+            return jsonify({"error": "seed must be an integer or null."}), 400
+
+    return jsonify(run_simulation(turn_limit=turn_limit, seed=seed))
+
+
+@app.route('/run_sim/verify_replay', methods=['POST'])
+def run_sim_verify_replay():
+    payload = request.get_json(silent=True) or {}
+    turn_limit = payload.get("turn_limit", 10)
+    seed = payload.get("seed")
+
+    try:
+        turn_limit = int(turn_limit)
+    except (TypeError, ValueError):
+        return jsonify({"error": "turn_limit must be an integer."}), 400
+
+    if seed is not None:
+        try:
+            seed = int(seed)
+        except (TypeError, ValueError):
+            return jsonify({"error": "seed must be an integer or null."}), 400
+
+    return jsonify(verify_simulation_replay(turn_limit=turn_limit, seed=seed))
 
 
 @app.route('/compile_text', methods=['POST'])

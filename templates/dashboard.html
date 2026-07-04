@@ -95,7 +95,20 @@
 
         <section class="card">
             <h2>AI vs AI Simulation</h2>
-            <button onclick="runSimulation()">Run Simulation</button>
+            <div class="row">
+                <div>
+                    <label for="sim-turn-limit">Turn Limit</label>
+                    <input id="sim-turn-limit" value="10" />
+                </div>
+                <div>
+                    <label for="sim-seed">Seed (optional)</label>
+                    <input id="sim-seed" value="" placeholder="random if empty" />
+                </div>
+            </div>
+            <div style="margin-top: 10px;" class="row">
+                <button onclick="runSimulation()">Run Simulation</button>
+                <button onclick="verifyReplay()">Verify Deterministic Replay</button>
+            </div>
             <pre id="simulation-output">Click "Run Simulation" to execute a blueprint-driven battle.</pre>
         </section>
 
@@ -207,16 +220,60 @@
             return JSON.stringify(data, null, 2);
         }
 
+        function parseSimulationInputs() {
+            const rawTurnLimit = document.getElementById('sim-turn-limit').value.trim();
+            const rawSeed = document.getElementById('sim-seed').value.trim();
+
+            const turnLimit = Number(rawTurnLimit || '10');
+            if (!Number.isFinite(turnLimit)) {
+                throw new Error('Turn limit must be numeric.');
+            }
+
+            let seed = null;
+            if (rawSeed !== '') {
+                const parsedSeed = Number(rawSeed);
+                if (!Number.isFinite(parsedSeed)) {
+                    throw new Error('Seed must be numeric when provided.');
+                }
+                seed = parsedSeed;
+            }
+
+            return { turn_limit: turnLimit, seed };
+        }
+
         async function runSimulation() {
             const output = document.getElementById('simulation-output');
             output.textContent = 'Running simulation...';
 
             try {
-                const response = await fetch('/run_sim', { method: 'POST' });
+                const payload = parseSimulationInputs();
+                const response = await fetch('/run_sim', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
                 const data = await response.json();
                 output.textContent = pretty(data);
             } catch (error) {
                 output.textContent = `Simulation error: ${error.message}`;
+            }
+        }
+
+        async function verifyReplay() {
+            const output = document.getElementById('simulation-output');
+            output.textContent = 'Verifying deterministic replay...';
+
+            try {
+                const payload = parseSimulationInputs();
+                const response = await fetch('/run_sim/verify_replay', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await response.json();
+                output.textContent = pretty(data);
+            } catch (error) {
+                output.textContent = `Replay verification error: ${error.message}`;
             }
         }
 

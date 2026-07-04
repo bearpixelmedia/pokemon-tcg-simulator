@@ -4,6 +4,7 @@ import random
 from typing import Any
 
 from core.effect_types import EffectOperation, EffectProgram
+_ROTATING_STATUSES = {"Asleep", "Confused", "Paralyzed"}
 
 
 def create_demo_state() -> dict[str, Any]:
@@ -45,6 +46,24 @@ def _coerce_operation(operation: EffectOperation | dict[str, Any]) -> EffectOper
     return EffectOperation(op=operation.get("op", "unknown"), params=operation.get("params", {}))
 
 
+def _apply_status_to_slot(slot: dict[str, Any], status: str) -> None:
+    statuses = [value for value in slot.get("status", []) if isinstance(value, str)]
+
+    if status in _ROTATING_STATUSES:
+        statuses = [existing for existing in statuses if existing not in _ROTATING_STATUSES]
+    elif status in statuses:
+        slot["status"] = statuses
+        return
+
+    if status not in statuses:
+        statuses.append(status)
+    slot["status"] = statuses
+
+    if status == "Paralyzed":
+        # Paralysis expires during Pokémon Checkup after the owner's next turn.
+        slot["paralyzed_turns_remaining"] = 1
+
+
 def apply_effect_program(
     program: EffectProgram,
     state: dict[str, Any],
@@ -84,8 +103,7 @@ def _apply_operation(
     if normalized.op == "apply_status":
         slot = _target_slot(state, actor, normalized.params["target"])
         status = normalized.params["status"]
-        if status not in slot["status"]:
-            slot["status"].append(status)
+        _apply_status_to_slot(slot, status)
         events.append(f"{actor} applied {status} to {normalized.params['target']}.")
         return
 
@@ -170,8 +188,10 @@ def apply_pokemon_checkup(
     rng = rng or random.Random()
     events: list[str] = []
     target = state["players"][actor]["active"]
-    statuses = list(target["status"])
+    statuses = list(target.get("status", []))
 
+    # Pokémon Checkup special condition order:
+    # Poisoned -> Burned -> Asleep -> Paralyzed
     if "Poisoned" in statuses:
         target["hp"] = max(0, target["hp"] - 10)
         events.append(f"{actor} took 10 poison damage.")
@@ -186,6 +206,16 @@ def apply_pokemon_checkup(
     if "Asleep" in statuses and rng.choice(["heads", "tails"]) == "heads":
         target["status"] = [status for status in target["status"] if status != "Asleep"]
         events.append(f"{actor} woke up from Asleep.")
+
+    if "Paralyzed" in statuses:
+        remaining = int(target.get("paralyzed_turns_remaining", 1))
+        remaining -= 1
+        if remaining <= 0:
+            target["status"] = [status for status in target["status"] if status != "Paralyzed"]
+            target.pop("paralyzed_turns_remaining", None)
+            events.append(f"{actor} recovered from Paralyzed.")
+        else:
+            target["paralyzed_turns_remaining"] = remaining
 
     return events
 

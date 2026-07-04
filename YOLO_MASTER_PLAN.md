@@ -29,20 +29,20 @@ Exit criteria:
 Goal: run all core analysis actions sequentially in one command/API flow.
 
 ### 1.1 Sequential pipeline runner
-- [ ] Add orchestrator: `coverage baseline -> unresolved mining -> snapshot export`
-- [ ] Support configurable scope (`marks`, `limit`, `force_refresh`)
-- [ ] Return machine-readable report and saved artifact paths
+- [x] Add orchestrator: `coverage baseline -> unresolved mining -> snapshot export`
+- [x] Support configurable scope (`marks`, `limit`, `force_refresh`)
+- [x] Return machine-readable report and saved artifact paths
 
 ### 1.2 Unresolved-clause mining
-- [ ] Normalize unresolved text
-- [ ] Cluster by shape/signature
-- [ ] Suggest candidate template forms with placeholders
-- [ ] Prioritize by frequency
+- [x] Normalize unresolved text
+- [x] Cluster by shape/signature
+- [x] Suggest candidate template forms with placeholders
+- [x] Prioritize by frequency
 
 ### 1.3 Coverage artifacts/history
-- [ ] Persist latest run summary and recommended templates
-- [ ] Persist timestamped snapshots for progress comparison
-- [ ] Include reproducible metadata
+- [x] Persist latest run summary and recommended templates
+- [x] Persist timestamped snapshots for progress comparison
+- [x] Include reproducible metadata
 
 Exit criteria:
 - A single YOLO API call runs all stages and returns actionable outputs
@@ -52,9 +52,9 @@ Exit criteria:
 ## Phase 2 — Rules Engine Fidelity
 
 ### 2.1 Turn-state correctness
-- [ ] Full phase/state machine
-- [ ] Turn windows and operation ordering
-- [ ] Deterministic RNG and replayability
+- [x] Full phase/state machine
+- [x] Turn windows and operation ordering
+- [x] Deterministic RNG and replayability
 
 ### 2.2 Rule mechanics
 - [ ] Full Special Conditions semantics

@@ -7,6 +7,7 @@ from sim.game import (
     build_blueprint_card,
     run_full_yolo_pass,
     run_simulation,
+    verify_simulation_replay,
 )
 
 __all__ = [
@@ -16,4 +17,5 @@ __all__ = [
     "build_blueprint_card",
     "run_full_yolo_pass",
     "run_simulation",
+    "verify_simulation_replay",
 ]

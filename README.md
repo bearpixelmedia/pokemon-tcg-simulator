@@ -20,6 +20,8 @@ Complete modular engine with:
   Clusters unresolved clauses and suggests candidate template patterns.
 - `core/yolo_pipeline.py`  
   Runs the sequential YOLO pipeline and writes snapshot artifacts.
+- `core/turn_engine.py`  
+  Deterministic turn/phase state machine with replay checksums.
 - `sim/game.py`  
   Runs AI vs AI simulations using blueprint-generated card text.
 - `templates/dashboard.html`  
@@ -36,6 +38,7 @@ Then open http://127.0.0.1:5000
 ## API endpoints
 
 - `POST /run_sim` -> run AI vs AI demo simulation
+- `POST /run_sim/verify_replay` -> run deterministic replay consistency check
 - `POST /compile_text` -> compile card text into operation DSL
 - `GET /blueprints` -> list available variable wording blueprints
 - `POST /build_card` -> instantiate blueprint with variables and compile it
