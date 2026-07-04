@@ -4,6 +4,7 @@ import random
 from typing import Any
 
 from core.effect_types import EffectOperation, EffectProgram
+from core.rules_mechanics import create_active_pokemon
 _ROTATING_STATUSES = {"Asleep", "Confused", "Paralyzed"}
 
 
@@ -13,14 +14,18 @@ def create_demo_state() -> dict[str, Any]:
             "p1": {
                 "name": "You",
                 "hand_size": 5,
-                "active": {"hp": 120, "max_hp": 120, "status": [], "energy_attached": 1},
+                "active": create_active_pokemon(),
                 "bench_size": 2,
+                "prizes_remaining": 6,
+                "knockouts": 0,
             },
             "p2": {
                 "name": "AI",
                 "hand_size": 5,
-                "active": {"hp": 120, "max_hp": 120, "status": [], "energy_attached": 1},
+                "active": create_active_pokemon(),
                 "bench_size": 2,
+                "prizes_remaining": 6,
+                "knockouts": 0,
             },
         }
     }
@@ -170,6 +175,10 @@ def _apply_operation(
 
     if normalized.op in {"ignore_weakness_resistance", "apply_temporary_rule", "select_opponent_bench"}:
         events.append(f"{actor} prepared effect: {normalized.op}.")
+        return
+
+    if normalized.op == "script_hook":
+        events.append(f"{actor} queued scripted hook: {normalized.params.get('hook_id', 'unknown')}.")
         return
 
     if normalized.op == "flip_coin":

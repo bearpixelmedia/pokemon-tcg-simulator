@@ -57,10 +57,10 @@ Exit criteria:
 - [x] Deterministic RNG and replayability
 
 ### 2.2 Rule mechanics
-- [ ] Full Special Conditions semantics
-- [ ] Attach/pay energy costs
-- [ ] Retreat/evolution/devolution rules
-- [ ] KO/prize/checkup correctness
+- [x] Full Special Conditions semantics
+- [x] Attach/pay energy costs
+- [x] Retreat/evolution/devolution rules
+- [x] KO/prize/checkup correctness
 - [ ] Trainer lifecycle and legality restrictions
 - [ ] Replacement and prevention effects timing
 
@@ -72,14 +72,14 @@ Exit criteria:
 ## Phase 3 — Text Coverage Expansion System
 
 ### 3.1 Template library growth
-- [ ] Add high-frequency unresolved patterns from mining
-- [ ] Add parameterized handlers for common “if/choose/up to” variants
+- [x] Add high-frequency unresolved patterns from mining
+- [x] Add parameterized handlers for common “if/choose/up to” variants
 - [ ] Add composition support for multi-clause effects
 
 ### 3.2 Controlled fallbacks
-- [ ] Mark unsupported clauses with explicit reason
-- [ ] Add optional script hooks only for outliers
-- [ ] Keep unresolved registry queryable
+- [x] Mark unsupported clauses with explicit reason
+- [x] Add optional script hooks only for outliers
+- [x] Keep unresolved registry queryable
 
 Exit criteria:
 - Coverage trend moves upward each template sprint
@@ -89,9 +89,9 @@ Exit criteria:
 ## Phase 4 — Legality and Card Data Governance
 
 ### 4.1 Legality model
-- [ ] Regulation marks + release gates
+- [x] Regulation marks + release gates
 - [ ] Reprint/errata handling model
-- [ ] Snapshot by date/season
+- [x] Snapshot by date/season
 
 ### 4.2 Data pipeline
 - [ ] Scheduled ingest
@@ -106,10 +106,10 @@ Exit criteria:
 ## Phase 5 — Verification and Confidence
 
 ### 5.1 Tests
-- [ ] Unit tests per operation
-- [ ] Unit tests per template family
+- [x] Unit tests per operation
+- [x] Unit tests per template family
 - [ ] Regression fixtures for known interactions
-- [ ] Replay equivalence tests (seeded)
+- [x] Replay equivalence tests (seeded)
 
 ### 5.2 Quality gates
 - [ ] CI fails on coverage regressions
@@ -123,10 +123,10 @@ Exit criteria:
 
 ## Phase 6 — AI Simulation Layer
 
-- [ ] Legal action generator
-- [ ] Heuristic bot policies
-- [ ] Batch simulation runner
-- [ ] Strategy/performance telemetry
+- [x] Legal action generator
+- [x] Heuristic bot policies
+- [x] Batch simulation runner
+- [x] Strategy/performance telemetry
 
 Exit criteria:
 - Sim output is legal, deterministic, and measurable

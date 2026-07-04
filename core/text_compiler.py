@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from typing import Callable
 
 from core.effect_types import EffectOperation, EffectProgram
+from core.script_fallbacks import resolve_script_fallback
+from core.unresolved_registry import register_unresolved_clause
 
 _STATUS_MAP = {
     "poisoned": "Poisoned",
@@ -512,6 +514,10 @@ def _compile_clause(clause: str) -> tuple[list[EffectOperation], str | None]:
         if match:
             return template.builder(match), template.name
 
+    fallback = resolve_script_fallback(clause)
+    if fallback is not None:
+        return fallback
+
     return [], None
 
 
@@ -530,6 +536,7 @@ def compile_effect_text(text: str) -> EffectProgram:
         clause_operations, template_name = _compile_clause(clause)
         if template_name is None:
             unresolved_clauses.append(clause)
+            register_unresolved_clause(clause, source_text=normalized)
             continue
         operations.extend(clause_operations)
         template_names.append(template_name)

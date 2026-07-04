@@ -1,9 +1,13 @@
 import unittest
 
 from core.text_compiler import compile_effect_text
+from core.unresolved_registry import clear_unresolved_registry, snapshot_unresolved_registry
 
 
 class TextCompilerTests(unittest.TestCase):
+    def setUp(self) -> None:
+        clear_unresolved_registry()
+
     def test_damage_and_status_resolves(self) -> None:
         program = compile_effect_text("30 damage. Your opponent's Active Pokémon is now Poisoned.")
         self.assertTrue(program.is_fully_resolved)
@@ -39,6 +43,14 @@ class TextCompilerTests(unittest.TestCase):
         program = compile_effect_text("You may play any number of Item cards during your turn.")
         self.assertFalse(program.is_fully_resolved)
         self.assertIsNotNone(program.unresolved_text)
+        registry = snapshot_unresolved_registry(limit=10)
+        self.assertGreaterEqual(registry["total_unique_clauses"], 1)
+
+    def test_script_fallback_resolves_known_clause(self) -> None:
+        text = "Discard your hand and draw 7 cards."
+        program = compile_effect_text(text)
+        self.assertTrue(program.is_fully_resolved)
+        self.assertEqual(program.operations[0].op, "script_hook")
 
 
 if __name__ == "__main__":

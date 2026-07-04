@@ -1,0 +1,88 @@
+from __future__ import annotations
+
+import json
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
+
+from core.legality_snapshot import build_standard_legality_snapshot
+from core.standard_coverage import run_standard_coverage_analysis
+from core.turn_engine import verify_seed_replay
+
+DEFAULT_BASELINE_PATH = Path("/workspace/artifacts/quality/coverage_baseline.json")
+
+
+def _load_json(path: Path) -> dict[str, Any] | None:
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+
+def _save_json(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+def run_quality_gates(
+    coverage_limit_cards: int | None = 250,
+    legality_limit_cards: int | None = 300,
+    marks: tuple[str, ...] = ("H", "I", "J"),
+    baseline_path: str | Path = DEFAULT_BASELINE_PATH,
+    min_replay_checks: int = 3,
+    update_baseline: bool = False,
+    force_refresh: bool = False,
+) -> dict[str, Any]:
+    baseline_file = Path(baseline_path)
+    coverage = run_standard_coverage_analysis(
+        marks=marks,
+        limit_cards=coverage_limit_cards,
+        include_examples=False,
+        force_refresh=force_refresh,
+    )
+    legality = build_standard_legality_snapshot(
+        marks=marks,
+        limit_cards=legality_limit_cards,
+    )
+
+    replay_results = [verify_seed_replay(turn_limit=8, seed=seed) for seed in (101, 202, 303)[:min_replay_checks]]
+    replay_pass = all(result["deterministic"] for result in replay_results)
+
+    baseline = _load_json(baseline_file)
+    current_resolution = float(coverage.get("summary", {}).get("text_resolution_percent", 0))
+    baseline_resolution = (
+        float(baseline.get("summary", {}).get("text_resolution_percent", 0)) if baseline else None
+    )
+    regression = (
+        baseline_resolution is not None and current_resolution + 0.001 < baseline_resolution
+    )
+
+    if baseline is None or update_baseline:
+        _save_json(
+            baseline_file,
+            {
+                "generated_at": datetime.now(UTC).isoformat(),
+                "summary": coverage.get("summary", {}),
+                "card_summary": coverage.get("card_summary", {}),
+                "metadata": coverage.get("metadata", {}),
+            },
+        )
+
+    quality_pass = bool(replay_pass and not regression)
+    return {
+        "quality_pass": quality_pass,
+        "coverage": coverage.get("summary", {}),
+        "legality": legality.get("summary", {}),
+        "replay_checks": replay_results,
+        "baseline": {
+            "path": str(baseline_file),
+            "exists": baseline is not None,
+            "updated": baseline is None or update_baseline,
+            "baseline_resolution_percent": baseline_resolution,
+            "current_resolution_percent": current_resolution,
+            "regression_detected": regression,
+        },
+    }
+

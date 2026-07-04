@@ -6,8 +6,15 @@ import random
 from enum import Enum
 from typing import Any
 
+from core.ai_policy import choose_action_heuristic, generate_legal_actions
 from core.card_blueprints import list_blueprints
 from core.effects import apply_effect_program, apply_pokemon_checkup, create_demo_state
+from core.rules_mechanics import (
+    attempt_devolve,
+    attempt_evolve,
+    attempt_retreat,
+    resolve_knockouts_and_prizes,
+)
 from core.text_compiler import compile_effect_text
 
 
@@ -58,6 +65,7 @@ def _build_turn_action(rng: random.Random) -> dict[str, Any]:
     blueprint_keys = [entry["key"] for entry in list_blueprints()]
     blueprint_key = rng.choice(blueprint_keys)
     return {
+        "action_type": "attack",
         "blueprint_key": blueprint_key,
         "variables": _random_action_for_blueprint(rng, blueprint_key),
     }
@@ -91,6 +99,41 @@ def _attack_allowed(state: dict[str, Any], actor: str, rng: random.Random) -> tu
     return True, events
 
 
+def _normalize_action_input(raw_action: dict[str, Any], rng: random.Random) -> dict[str, Any]:
+    action = dict(raw_action)
+    action_type = action.get("action_type")
+    if action_type is None:
+        # Backward compatibility with earlier scripted shape that only supplied blueprint keys.
+        action_type = "attack" if action.get("blueprint_key") else "pass"
+        action["action_type"] = action_type
+
+    if action_type == "attack":
+        blueprint_key = action.get("blueprint_key")
+        if not blueprint_key:
+            blueprint_key = _build_turn_action(rng)["blueprint_key"]
+            action["blueprint_key"] = blueprint_key
+        if "variables" not in action:
+            action["variables"] = _random_action_for_blueprint(rng, blueprint_key)
+
+    return action
+
+
+def _winner_from_state(state: dict[str, Any]) -> str | None:
+    p1 = state["players"]["p1"]
+    p2 = state["players"]["p2"]
+    if int(p1.get("prizes_remaining", 6)) <= 0 and int(p2.get("prizes_remaining", 6)) <= 0:
+        return "Draw"
+    if int(p2.get("prizes_remaining", 6)) <= 0:
+        return "AI"
+    if int(p1.get("prizes_remaining", 6)) <= 0:
+        return "You"
+    if int(p1["active"].get("hp", 0)) <= 0 and int(p1.get("bench_size", 0)) <= 0:
+        return "AI"
+    if int(p2["active"].get("hp", 0)) <= 0 and int(p2.get("bench_size", 0)) <= 0:
+        return "You"
+    return None
+
+
 def run_turn_based_simulation(
     turn_limit: int = 10,
     seed: int | None = None,
@@ -111,52 +154,82 @@ def run_turn_based_simulation(
         turn_entry["phases"].append(_phase_events(TurnPhase.TURN_START, [f"{actor} started turn {turn}."]))
 
         if scripted_actions and turn - 1 < len(scripted_actions):
-            action = dict(scripted_actions[turn - 1])
+            action = _normalize_action_input(dict(scripted_actions[turn - 1]), rng)
         else:
-            action = _build_turn_action(rng)
+            legal_actions = generate_legal_actions(state, actor)
+            chosen = choose_action_heuristic(state, actor, legal_actions, rng)
+            action = _normalize_action_input(chosen, rng)
 
-        blueprint_key = action["blueprint_key"]
+        action_type = action.get("action_type", "pass")
+        blueprint_key = action.get("blueprint_key")
         variables = action.get("variables", {})
-        turn_actions.append({"turn": turn, "actor": actor, "blueprint_key": blueprint_key, "variables": variables})
-        turn_entry["phases"].append(
-            _phase_events(
-                TurnPhase.ACTION_SELECTION,
-                [f"{actor} selected blueprint '{blueprint_key}' with variables {variables}."],
-            )
-        )
-
-        from core.card_blueprints import build_card_from_blueprint  # local to avoid circular import risks
-
-        built_card = build_card_from_blueprint(blueprint_key, variables)
-        compiled_cards.append(
+        turn_actions.append(
             {
                 "turn": turn,
                 "actor": actor,
+                "action_type": action_type,
                 "blueprint_key": blueprint_key,
                 "variables": variables,
-                "rendered_text": built_card["rendered_text"],
-                "compiled_program": built_card["compiled_program"],
             }
         )
+        turn_entry["phases"].append(
+            _phase_events(
+                TurnPhase.ACTION_SELECTION,
+                [f"{actor} selected action '{action_type}' ({blueprint_key}) with variables {variables}."],
+            )
+        )
 
-        program = compile_effect_text(built_card["rendered_text"])
-        turn_entry["card_text"] = built_card["rendered_text"]
-        turn_entry["is_fully_resolved"] = program.is_fully_resolved
+        attack_events: list[str] = []
+        before_attack_events: list[str] = []
 
-        can_attack, before_attack_events = _attack_allowed(state, actor, rng)
+        if action_type == "attack":
+            from core.card_blueprints import build_card_from_blueprint  # local to avoid circular import risks
+
+            built_card = build_card_from_blueprint(blueprint_key, variables)
+            compiled_cards.append(
+                {
+                    "turn": turn,
+                    "actor": actor,
+                    "blueprint_key": blueprint_key,
+                    "variables": variables,
+                    "rendered_text": built_card["rendered_text"],
+                    "compiled_program": built_card["compiled_program"],
+                }
+            )
+            program = compile_effect_text(built_card["rendered_text"])
+            turn_entry["card_text"] = built_card["rendered_text"]
+            turn_entry["is_fully_resolved"] = program.is_fully_resolved
+
+            can_attack, before_attack_events = _attack_allowed(state, actor, rng)
+            if can_attack:
+                attack_events = apply_effect_program(program, state, actor, rng)
+            else:
+                attack_events = [f"{actor}'s attack step was skipped due to status restrictions."]
+        else:
+            turn_entry["card_text"] = None
+            turn_entry["is_fully_resolved"] = None
+            if action_type == "retreat":
+                _, attack_events = attempt_retreat(state, actor)
+            elif action_type == "evolve":
+                _, attack_events = attempt_evolve(state, actor)
+            elif action_type == "devolve":
+                _, attack_events = attempt_devolve(state, actor)
+            else:
+                attack_events = [f"{actor} passed the action step."]
+
         turn_entry["phases"].append(_phase_events(TurnPhase.BEFORE_ATTACK, before_attack_events))
 
-        attack_events: list[str]
-        if can_attack:
-            attack_events = apply_effect_program(program, state, actor, rng)
-        else:
-            attack_events = [f"{actor}'s attack step was skipped due to status restrictions."]
-        turn_entry["phases"].append(_phase_events(TurnPhase.ATTACK_RESOLUTION, attack_events))
+        ko_after_action = resolve_knockouts_and_prizes(state)
+        turn_entry["phases"].append(_phase_events(TurnPhase.ATTACK_RESOLUTION, attack_events + ko_after_action))
 
         checkup_events = apply_pokemon_checkup(state, actor, rng)
         opponent_checkup_events = apply_pokemon_checkup(state, target, rng)
+        ko_after_checkup = resolve_knockouts_and_prizes(state)
         turn_entry["phases"].append(
-            _phase_events(TurnPhase.BETWEEN_TURNS_CHECKUP, checkup_events + opponent_checkup_events)
+            _phase_events(
+                TurnPhase.BETWEEN_TURNS_CHECKUP,
+                checkup_events + opponent_checkup_events + ko_after_checkup,
+            )
         )
 
         turn_entry["phases"].append(_phase_events(TurnPhase.TURN_END, [f"{actor} ended turn {turn}."]))
@@ -164,17 +237,26 @@ def run_turn_based_simulation(
             "you": state["players"]["p1"]["active"]["hp"],
             "ai": state["players"]["p2"]["active"]["hp"],
         }
+        turn_entry["prizes_remaining"] = {
+            "you": state["players"]["p1"]["prizes_remaining"],
+            "ai": state["players"]["p2"]["prizes_remaining"],
+        }
         event_log.append(turn_entry)
 
-        if state["players"]["p1"]["active"]["hp"] <= 0 or state["players"]["p2"]["active"]["hp"] <= 0:
+        winner = _winner_from_state(state)
+        if winner is not None:
             break
 
+    winner = _winner_from_state(state)
+    if winner is None:
+        p1_hp = state["players"]["p1"]["active"]["hp"]
+        p2_hp = state["players"]["p2"]["active"]["hp"]
+        if p1_hp == p2_hp:
+            winner = "Draw"
+        else:
+            winner = "You" if p2_hp < p1_hp else "AI"
     p1_hp = state["players"]["p1"]["active"]["hp"]
     p2_hp = state["players"]["p2"]["active"]["hp"]
-    if p1_hp == p2_hp:
-        winner = "Draw"
-    else:
-        winner = "You" if p2_hp < p1_hp else "AI"
 
     return {
         "winner": winner,
