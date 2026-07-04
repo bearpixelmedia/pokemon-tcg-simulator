@@ -283,6 +283,24 @@
             </div>
             <pre id="quality-output">Quality gate output will appear here.</pre>
         </section>
+
+        <section class="card">
+            <h2>Data Pipeline Health</h2>
+            <p class="muted">Run schema drift and source reliability checks for TCGdex ingest.</p>
+            <div class="row">
+                <div>
+                    <label for="pipeline-limit">Card Limit</label>
+                    <input id="pipeline-limit" value="200" />
+                </div>
+                <div>
+                    <label><input id="pipeline-write-snapshot" type="checkbox" checked /> Write artifact snapshot</label>
+                </div>
+            </div>
+            <div style="margin-top: 10px;">
+                <button onclick="runPipelineHealth()">Run Pipeline Health</button>
+            </div>
+            <pre id="pipeline-output">Pipeline health output will appear here.</pre>
+        </section>
     </main>
 
     <script>
@@ -653,6 +671,30 @@
                 output.textContent = pretty(data);
             } catch (error) {
                 output.textContent = `Quality gates error: ${error.message}`;
+            }
+        }
+
+        async function runPipelineHealth() {
+            const output = document.getElementById('pipeline-output');
+            output.textContent = 'Running data pipeline health checks...';
+            try {
+                const limitCards = Number(document.getElementById('pipeline-limit').value.trim() || '200');
+                const writeSnapshot = document.getElementById('pipeline-write-snapshot').checked;
+                if (!Number.isFinite(limitCards)) {
+                    throw new Error('Pipeline card limit must be numeric.');
+                }
+                const response = await fetch('/data/pipeline/health', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        limit_cards: limitCards,
+                        write_snapshot: writeSnapshot
+                    })
+                });
+                const data = await response.json();
+                output.textContent = pretty(data);
+            } catch (error) {
+                output.textContent = `Pipeline health error: ${error.message}`;
             }
         }
 

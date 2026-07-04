@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from core.card_blueprints import build_card_from_blueprint
+from core.data_pipeline import run_pipeline_health_check
 from core.legality_snapshot import build_standard_legality_snapshot
 from core.quality_gates import run_quality_gates
 from core.standard_coverage import run_standard_coverage_analysis
@@ -159,5 +160,17 @@ def run_quality_gate_checks(
         marks=marks,
         update_baseline=update_baseline,
         force_refresh=force_refresh,
+    )
+
+
+def run_data_pipeline_health(
+    marks: tuple[str, ...] = ("H", "I", "J"),
+    limit_cards: int | None = 200,
+    write_snapshot: bool = True,
+) -> dict[str, Any]:
+    return run_pipeline_health_check(
+        marks=marks,
+        limit_cards=limit_cards,
+        write_snapshot=write_snapshot,
     )
 

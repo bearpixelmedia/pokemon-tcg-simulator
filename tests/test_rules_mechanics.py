@@ -1,5 +1,7 @@
 import unittest
 
+from core.effect_types import EffectOperation, EffectProgram
+from core.effects import apply_effect_program
 from core.effects import create_demo_state
 from core.rules_mechanics import (
     attempt_devolve,
@@ -34,6 +36,25 @@ class RulesMechanicsTests(unittest.TestCase):
         events = resolve_knockouts_and_prizes(state)
         self.assertTrue(any("Knocked Out" in event for event in events))
         self.assertEqual(state["players"]["p1"]["prizes_remaining"], 5)
+
+    def test_damage_reduction_and_prevent_hook(self) -> None:
+        state = create_demo_state()
+        reduction_program = EffectProgram(
+            source_text="reduction",
+            operations=[
+                EffectOperation(
+                    op="modify_incoming_damage_next_turn",
+                    params={"target": "self_active", "amount": 20},
+                )
+            ],
+        )
+        apply_effect_program(reduction_program, state, actor="p2")
+        damage_program = EffectProgram(
+            source_text="damage",
+            operations=[EffectOperation(op="deal_damage", params={"target": "opponent_active", "amount": 50})],
+        )
+        apply_effect_program(damage_program, state, actor="p1")
+        self.assertEqual(state["players"]["p2"]["active"]["hp"], 90)
 
 
 if __name__ == "__main__":

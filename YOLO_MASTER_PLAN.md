@@ -61,8 +61,8 @@ Exit criteria:
 - [x] Attach/pay energy costs
 - [x] Retreat/evolution/devolution rules
 - [x] KO/prize/checkup correctness
-- [ ] Trainer lifecycle and legality restrictions
-- [ ] Replacement and prevention effects timing
+- [x] Trainer lifecycle and legality restrictions
+- [x] Replacement and prevention effects timing
 
 Exit criteria:
 - Deterministic replay tests for core flow pass
@@ -74,7 +74,7 @@ Exit criteria:
 ### 3.1 Template library growth
 - [x] Add high-frequency unresolved patterns from mining
 - [x] Add parameterized handlers for common “if/choose/up to” variants
-- [ ] Add composition support for multi-clause effects
+- [x] Add composition support for multi-clause effects
 
 ### 3.2 Controlled fallbacks
 - [x] Mark unsupported clauses with explicit reason
@@ -90,13 +90,13 @@ Exit criteria:
 
 ### 4.1 Legality model
 - [x] Regulation marks + release gates
-- [ ] Reprint/errata handling model
+- [x] Reprint/errata handling model
 - [x] Snapshot by date/season
 
 ### 4.2 Data pipeline
-- [ ] Scheduled ingest
-- [ ] Schema drift checks
-- [ ] Source reliability checks
+- [x] Scheduled ingest
+- [x] Schema drift checks
+- [x] Source reliability checks
 
 Exit criteria:
 - Standard pool snapshot is reproducible and auditable
@@ -108,13 +108,13 @@ Exit criteria:
 ### 5.1 Tests
 - [x] Unit tests per operation
 - [x] Unit tests per template family
-- [ ] Regression fixtures for known interactions
+- [x] Regression fixtures for known interactions
 - [x] Replay equivalence tests (seeded)
 
 ### 5.2 Quality gates
-- [ ] CI fails on coverage regressions
-- [ ] CI fails on legality snapshot mismatches
-- [ ] Coverage dashboard published as build artifact
+- [x] CI fails on coverage regressions
+- [x] CI fails on legality snapshot mismatches
+- [x] Coverage dashboard published as build artifact
 
 Exit criteria:
 - No silent behavior regressions

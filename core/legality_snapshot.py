@@ -4,6 +4,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
+from core.reprint_errata import enrich_legality_record
 from core.standard_coverage import fetch_card_detail, fetch_cards_by_regulation_mark
 
 
@@ -44,6 +45,8 @@ def build_standard_legality_snapshot(
 
     legal_cards = 0
     blocked_by_release = 0
+    legal_via_reprint = 0
+    cards_with_errata = 0
     blocked_examples: list[dict[str, Any]] = []
     scanned_cards: list[dict[str, Any]] = []
 
@@ -67,18 +70,25 @@ def build_standard_legality_snapshot(
                     }
                 )
 
-        scanned_cards.append(
-            {
-                "id": detail["id"],
-                "name": detail.get("name"),
-                "regulation_mark": regulation_mark,
-                "set_id": set_info.get("id"),
-                "set_name": set_info.get("name"),
-                "release_date": release_date,
-                "release_gate_satisfied": release_ok,
-                "is_legal": is_legal,
-            }
-        )
+        record = {
+            "id": detail["id"],
+            "name": detail.get("name"),
+            "regulation_mark": regulation_mark,
+            "set_id": set_info.get("id"),
+            "set_name": set_info.get("name"),
+            "release_date": release_date,
+            "release_gate_satisfied": release_ok,
+            "is_legal": is_legal,
+        }
+        enriched = enrich_legality_record(record)
+        if enriched.get("is_legal_via_reprint"):
+            legal_via_reprint += 1
+            enriched["is_legal"] = True
+            legal_cards += 1
+            blocked_by_release = max(0, blocked_by_release - 1)
+        if enriched.get("has_errata"):
+            cards_with_errata += 1
+        scanned_cards.append(enriched)
 
     return {
         "metadata": {
@@ -91,6 +101,8 @@ def build_standard_legality_snapshot(
         "summary": {
             "legal_cards": legal_cards,
             "blocked_by_release_gate_or_other": blocked_by_release,
+            "legal_via_reprint": legal_via_reprint,
+            "cards_with_errata": cards_with_errata,
             "legal_percent": round((legal_cards / len(scanned_cards) * 100) if scanned_cards else 0, 2),
         },
         "blocked_examples": blocked_examples,

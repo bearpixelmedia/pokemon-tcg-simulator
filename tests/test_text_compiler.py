@@ -52,6 +52,18 @@ class TextCompilerTests(unittest.TestCase):
         self.assertTrue(program.is_fully_resolved)
         self.assertEqual(program.operations[0].op, "script_hook")
 
+    def test_optional_clause_composition(self) -> None:
+        text = "You may draw 2 cards."
+        program = compile_effect_text(text)
+        self.assertTrue(program.is_fully_resolved)
+        self.assertEqual(program.operations[0].op, "optional_effect")
+
+    def test_conditional_clause_composition(self) -> None:
+        text = "If you have no cards in your hand, draw 3 cards."
+        program = compile_effect_text(text)
+        self.assertTrue(program.is_fully_resolved)
+        self.assertEqual(program.operations[0].op, "conditional_effect")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -16,6 +16,7 @@ from core.rules_mechanics import (
     resolve_knockouts_and_prizes,
 )
 from core.text_compiler import compile_effect_text
+from core.trainer_lifecycle import attach_tool, play_stadium, play_supporter, reset_turn_flags
 
 
 class TurnPhase(str, Enum):
@@ -151,6 +152,7 @@ def run_turn_based_simulation(
         target = "p2" if actor == "p1" else "p1"
         turn_entry: dict[str, Any] = {"turn": turn, "actor": actor, "phases": []}
 
+        reset_turn_flags(state, actor)
         turn_entry["phases"].append(_phase_events(TurnPhase.TURN_START, [f"{actor} started turn {turn}."]))
 
         if scripted_actions and turn - 1 < len(scripted_actions):
@@ -214,6 +216,12 @@ def run_turn_based_simulation(
                 _, attack_events = attempt_evolve(state, actor)
             elif action_type == "devolve":
                 _, attack_events = attempt_devolve(state, actor)
+            elif action_type == "play_supporter":
+                _, attack_events = play_supporter(state, actor)
+            elif action_type == "play_stadium":
+                _, attack_events = play_stadium(state, actor)
+            elif action_type == "attach_tool":
+                _, attack_events = attach_tool(state, actor)
             else:
                 attack_events = [f"{actor} passed the action step."]
 

@@ -9,7 +9,8 @@ from core.legality_snapshot import build_standard_legality_snapshot
 from core.standard_coverage import run_standard_coverage_analysis
 from core.turn_engine import verify_seed_replay
 
-DEFAULT_BASELINE_PATH = Path("/workspace/artifacts/quality/coverage_baseline.json")
+DEFAULT_BASELINE_PATH = Path("artifacts/quality/coverage_baseline.json")
+DEFAULT_DASHBOARD_PATH = Path("artifacts/quality/coverage_dashboard.html")
 
 
 def _load_json(path: Path) -> dict[str, Any] | None:
@@ -24,6 +25,43 @@ def _load_json(path: Path) -> dict[str, Any] | None:
 def _save_json(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+def _save_dashboard(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    coverage = payload.get("coverage", {})
+    legality = payload.get("legality", {})
+    baseline = payload.get("baseline", {})
+    html = f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Quality Gate Coverage Dashboard</title>
+  <style>
+    body {{ font-family: Arial, sans-serif; margin: 24px; }}
+    .card {{ border: 1px solid #ddd; border-radius: 8px; padding: 12px; margin-bottom: 12px; }}
+    .ok {{ color: #18794e; font-weight: 700; }}
+    .bad {{ color: #c92a2a; font-weight: 700; }}
+  </style>
+</head>
+<body>
+  <h1>Pokemon TCG Quality Dashboard</h1>
+  <div class="card">
+    <h2>Coverage</h2>
+    <pre>{json.dumps(coverage, indent=2)}</pre>
+  </div>
+  <div class="card">
+    <h2>Legality</h2>
+    <pre>{json.dumps(legality, indent=2)}</pre>
+  </div>
+  <div class="card">
+    <h2>Baseline</h2>
+    <pre>{json.dumps(baseline, indent=2)}</pre>
+  </div>
+</body>
+</html>
+"""
+    path.write_text(html, encoding="utf-8")
 
 
 def run_quality_gates(
@@ -71,7 +109,7 @@ def run_quality_gates(
         )
 
     quality_pass = bool(replay_pass and not regression)
-    return {
+    payload = {
         "quality_pass": quality_pass,
         "coverage": coverage.get("summary", {}),
         "legality": legality.get("summary", {}),
@@ -85,4 +123,9 @@ def run_quality_gates(
             "regression_detected": regression,
         },
     }
+    _save_dashboard(DEFAULT_DASHBOARD_PATH, payload)
+    payload["artifacts"] = {
+        "coverage_dashboard_html": str(DEFAULT_DASHBOARD_PATH),
+    }
+    return payload
 

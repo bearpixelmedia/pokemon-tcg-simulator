@@ -10,22 +10,31 @@ _ROTATING_STATUSES = {"Asleep", "Confused", "Paralyzed"}
 
 def create_demo_state() -> dict[str, Any]:
     return {
+        "board": {"stadium": None},
         "players": {
             "p1": {
                 "name": "You",
                 "hand_size": 5,
+                "hand_supporters": 1,
+                "hand_stadiums": 1,
+                "hand_tools": 1,
                 "active": create_active_pokemon(),
                 "bench_size": 2,
                 "prizes_remaining": 6,
                 "knockouts": 0,
+                "turn_flags": {},
             },
             "p2": {
                 "name": "AI",
                 "hand_size": 5,
+                "hand_supporters": 1,
+                "hand_stadiums": 1,
+                "hand_tools": 1,
                 "active": create_active_pokemon(),
                 "bench_size": 2,
                 "prizes_remaining": 6,
                 "knockouts": 0,
+                "turn_flags": {},
             },
         }
     }
@@ -94,8 +103,24 @@ def _apply_operation(
     if normalized.op == "deal_damage":
         slot = _target_slot(state, actor, normalized.params["target"])
         amount = int(normalized.params["amount"])
-        slot["hp"] = max(0, slot["hp"] - amount)
-        events.append(f"{actor} dealt {amount} damage to {normalized.params['target']}.")
+        if int(slot.get("prevent_all_damage_turns_remaining", 0)) > 0:
+            events.append(
+                f"{actor}'s damage was prevented on {normalized.params['target']}."
+            )
+            return
+
+        reduction_amount = 0
+        if int(slot.get("incoming_damage_reduction_turns_remaining", 0)) > 0:
+            reduction_amount = int(slot.get("incoming_damage_reduction_amount", 0))
+        final_amount = max(0, amount - reduction_amount)
+        slot["hp"] = max(0, slot["hp"] - final_amount)
+        if reduction_amount > 0:
+            events.append(
+                f"{actor} dealt {final_amount} damage to {normalized.params['target']} "
+                f"after {reduction_amount} reduction."
+            )
+        else:
+            events.append(f"{actor} dealt {final_amount} damage to {normalized.params['target']}.")
         return
 
     if normalized.op == "heal_damage":
@@ -167,9 +192,10 @@ def _apply_operation(
 
     if normalized.op == "modify_incoming_damage_next_turn":
         slot = state["players"][actor]["active"]
-        slot["incoming_damage_reduction_next_turn"] = int(normalized.params.get("amount", 0))
+        slot["incoming_damage_reduction_amount"] = int(normalized.params.get("amount", 0))
+        slot["incoming_damage_reduction_turns_remaining"] = 1
         events.append(
-            f"{actor} gained {slot['incoming_damage_reduction_next_turn']} damage reduction for next turn."
+            f"{actor} gained {slot['incoming_damage_reduction_amount']} damage reduction for next turn."
         )
         return
 
@@ -178,7 +204,13 @@ def _apply_operation(
         return
 
     if normalized.op == "script_hook":
-        events.append(f"{actor} queued scripted hook: {normalized.params.get('hook_id', 'unknown')}.")
+        hook_id = normalized.params.get("hook_id", "unknown")
+        if hook_id == "prevent-all-damage-next-turn":
+            slot = state["players"][actor]["active"]
+            slot["prevent_all_damage_turns_remaining"] = 1
+            events.append(f"{actor} set prevent-all-damage shield for next opponent turn.")
+            return
+        events.append(f"{actor} queued scripted hook: {hook_id}.")
         return
 
     if normalized.op == "flip_coin":
@@ -225,6 +257,17 @@ def apply_pokemon_checkup(
             events.append(f"{actor} recovered from Paralyzed.")
         else:
             target["paralyzed_turns_remaining"] = remaining
+
+    if int(target.get("incoming_damage_reduction_turns_remaining", 0)) > 0:
+        target["incoming_damage_reduction_turns_remaining"] -= 1
+        if target["incoming_damage_reduction_turns_remaining"] <= 0:
+            target["incoming_damage_reduction_turns_remaining"] = 0
+            target["incoming_damage_reduction_amount"] = 0
+
+    if int(target.get("prevent_all_damage_turns_remaining", 0)) > 0:
+        target["prevent_all_damage_turns_remaining"] -= 1
+        if target["prevent_all_damage_turns_remaining"] <= 0:
+            target["prevent_all_damage_turns_remaining"] = 0
 
     return events
 

@@ -1,0 +1,47 @@
+name: quality-gates
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - "cursor/**"
+  schedule:
+    - cron: "0 8 * * *"
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run test suite
+        run: python -m unittest discover -s tests -p "test_*.py"
+
+      - name: Run quality gates
+        run: python scripts/run_quality_gates.py --coverage-limit-cards 120 --legality-limit-cards 120
+
+      - name: Run scheduled pipeline health
+        run: python scripts/run_pipeline_health.py --limit-cards 120
+
+      - name: Upload quality report artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quality-report
+          path: |
+            artifacts/quality
+            artifacts/pipeline
+          if-no-files-found: warn
+

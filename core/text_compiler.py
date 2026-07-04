@@ -16,6 +16,8 @@ _STATUS_MAP = {
     "confused": "Confused",
 }
 _POKEMON_TOKEN = r"(?:Pokemon|Pokémon)"
+_OPTIONAL_TEMPLATE = re.compile(r"^You may (?P<effect>.+)\.$", re.IGNORECASE)
+_CONDITIONAL_TEMPLATE = re.compile(r"^If (?P<condition>.+?), (?P<effect>.+)\.$", re.IGNORECASE)
 
 
 def normalize_card_text(text: str) -> str:
@@ -483,6 +485,66 @@ def _merge_coin_flip_sequences(sentences: list[str]) -> list[str]:
 def _compile_clause(clause: str) -> tuple[list[EffectOperation], str | None]:
     clause = clause.strip()
 
+    optional_match = _OPTIONAL_TEMPLATE.fullmatch(clause)
+    if optional_match:
+        optional_effect = optional_match.group("effect").strip()
+        if not optional_effect.endswith("."):
+            optional_effect = f"{optional_effect}."
+        optional_program = compile_effect_text(optional_effect)
+        if not optional_program.is_fully_resolved or not optional_program.operations:
+            return [], None
+        return (
+            [
+                EffectOperation(
+                    op="optional_effect",
+                    params={
+                        "condition": "player_choice",
+                        "operations": [operation.to_dict() for operation in optional_program.operations],
+                        "unresolved": optional_program.unresolved_details,
+                    },
+                )
+            ],
+            "optional_clause",
+        )
+
+    conditional_match = _CONDITIONAL_TEMPLATE.fullmatch(clause)
+    if conditional_match:
+        conditional_effect = conditional_match.group("effect").strip()
+        if not conditional_effect.endswith("."):
+            conditional_effect = f"{conditional_effect}."
+        conditional_program = compile_effect_text(conditional_effect)
+        if not conditional_program.is_fully_resolved or not conditional_program.operations:
+            return [], None
+        return (
+            [
+                EffectOperation(
+                    op="conditional_effect",
+                    params={
+                        "condition": conditional_match.group("condition").strip(),
+                        "operations": [operation.to_dict() for operation in conditional_program.operations],
+                        "unresolved": conditional_program.unresolved_details,
+                    },
+                )
+            ],
+            "conditional_clause",
+        )
+
+    if " and " in clause.lower() and not clause.lower().startswith("if "):
+        parts = [part.strip() for part in re.split(r"\band\b", clause, flags=re.IGNORECASE) if part.strip()]
+        if len(parts) > 1:
+            composite_operations: list[EffectOperation] = []
+            resolved_parts = 0
+            for part in parts:
+                candidate = part if part.endswith(".") else f"{part}."
+                part_operations, template_name = _compile_clause(candidate)
+                if template_name is None:
+                    composite_operations = []
+                    break
+                resolved_parts += 1
+                composite_operations.extend(part_operations)
+            if resolved_parts == len(parts):
+                return composite_operations, "composite_and_clause"
+
     coin_match = COIN_FLIP_TEMPLATE.fullmatch(clause)
     if coin_match:
         heads_text = coin_match.group("heads").strip()
@@ -531,11 +593,13 @@ def compile_effect_text(text: str) -> EffectProgram:
     operations: list[EffectOperation] = []
     template_names: list[str] = []
     unresolved_clauses: list[str] = []
+    unresolved_details: list[dict[str, str]] = []
 
     for clause in clauses:
         clause_operations, template_name = _compile_clause(clause)
         if template_name is None:
             unresolved_clauses.append(clause)
+            unresolved_details.append({"clause": clause, "reason": "no_template_or_fallback_match"})
             register_unresolved_clause(clause, source_text=normalized)
             continue
         operations.extend(clause_operations)
@@ -546,6 +610,7 @@ def compile_effect_text(text: str) -> EffectProgram:
         operations=operations,
         template_name=" + ".join(template_names) if template_names else None,
         unresolved_text=" ".join(unresolved_clauses) if unresolved_clauses else None,
+        unresolved_details=unresolved_details,
     )
 
 

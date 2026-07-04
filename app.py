@@ -10,6 +10,7 @@ from sim.game import (
     analyze_template_recommendations,
     build_blueprint_card,
     build_legality_snapshot,
+    run_data_pipeline_health,
     run_batch_simulations,
     run_full_yolo_pass,
     run_quality_gate_checks,
@@ -270,6 +271,29 @@ def quality_gates():
             marks=marks_tuple,
             update_baseline=update_baseline,
             force_refresh=force_refresh,
+        )
+    )
+
+
+@app.route('/data/pipeline/health', methods=['POST'])
+def data_pipeline_health():
+    payload = request.get_json(silent=True) or {}
+    limit_cards = payload.get("limit_cards", 200)
+    marks = payload.get("marks", ["H", "I", "J"])
+    write_snapshot = bool(payload.get("write_snapshot", True))
+
+    if limit_cards is not None:
+        try:
+            limit_cards = int(limit_cards)
+        except (TypeError, ValueError):
+            return jsonify({"error": "limit_cards must be an integer or null."}), 400
+
+    marks_tuple = tuple(str(mark).upper() for mark in marks)
+    return jsonify(
+        run_data_pipeline_health(
+            marks=marks_tuple,
+            limit_cards=limit_cards,
+            write_snapshot=write_snapshot,
         )
     )
 

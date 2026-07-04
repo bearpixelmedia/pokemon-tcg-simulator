@@ -23,10 +23,11 @@ class EffectProgram:
     operations: list[EffectOperation] = field(default_factory=list)
     template_name: str | None = None
     unresolved_text: str | None = None
+    unresolved_details: list[dict[str, str]] = field(default_factory=list)
 
     @property
     def is_fully_resolved(self) -> bool:
-        return self.unresolved_text is None
+        return self.unresolved_text is None and not self.unresolved_details
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -34,6 +35,7 @@ class EffectProgram:
             "template_name": self.template_name,
             "is_fully_resolved": self.is_fully_resolved,
             "unresolved_text": self.unresolved_text,
+            "unresolved_details": self.unresolved_details,
             "operations": [operation.to_dict() for operation in self.operations],
         }
 
