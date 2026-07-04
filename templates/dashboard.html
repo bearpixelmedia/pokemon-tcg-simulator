@@ -38,7 +38,7 @@
             align-items: start;
         }
 
-        textarea, select, input {
+        textarea, select, input:not([type="checkbox"]) {
             width: 100%;
             background: #0b1220;
             color: #e2e8f0;
@@ -76,6 +76,11 @@
         .muted {
             color: #93c5fd;
             font-size: 0.92rem;
+        }
+
+        label input[type="checkbox"] {
+            width: auto;
+            margin-right: 8px;
         }
     </style>
 </head>
@@ -120,6 +125,31 @@
                 <button onclick="buildCard()">Build Card From Blueprint</button>
             </div>
             <pre id="blueprint-output">Blueprint output will appear here.</pre>
+        </section>
+
+        <section class="card">
+            <h2>Standard Coverage Analyzer</h2>
+            <p class="muted">
+                Ingests regulation-mark cards (H/I/J), compiles text blocks, and reports resolved vs unresolved coverage.
+            </p>
+            <div class="row">
+                <div>
+                    <label for="coverage-limit">Card Limit (null or 0 = full)</label>
+                    <input id="coverage-limit" value="250" />
+                </div>
+                <div>
+                    <label for="coverage-marks">Regulation Marks (comma-separated)</label>
+                    <input id="coverage-marks" value="H,I,J" />
+                </div>
+            </div>
+            <div style="margin-top: 10px;" class="row">
+                <label><input id="coverage-examples" type="checkbox" checked /> Include unresolved examples</label>
+                <label><input id="coverage-refresh" type="checkbox" /> Force refresh (skip cache)</label>
+            </div>
+            <div style="margin-top: 10px;">
+                <button onclick="runCoverageAnalysis()">Run Coverage Analysis</button>
+            </div>
+            <pre id="coverage-output">Coverage analysis output will appear here.</pre>
         </section>
     </main>
 
@@ -214,6 +244,50 @@
                 output.textContent = pretty(data);
             } catch (error) {
                 output.textContent = `Build error: ${error.message}`;
+            }
+        }
+
+        async function runCoverageAnalysis() {
+            const output = document.getElementById('coverage-output');
+            output.textContent = 'Analyzing coverage (this can take a bit)...';
+
+            const rawLimit = document.getElementById('coverage-limit').value.trim();
+            const marksRaw = document.getElementById('coverage-marks').value.trim();
+            const includeExamples = document.getElementById('coverage-examples').checked;
+            const forceRefresh = document.getElementById('coverage-refresh').checked;
+
+            let limitCards = 250;
+            if (rawLimit === '' || rawLimit.toLowerCase() === 'null') {
+                limitCards = null;
+            } else {
+                const parsed = Number(rawLimit);
+                if (!Number.isFinite(parsed)) {
+                    output.textContent = 'Card Limit must be a number, 0, or null.';
+                    return;
+                }
+                limitCards = parsed;
+            }
+
+            const marks = marksRaw
+                .split(',')
+                .map(value => value.trim().toUpperCase())
+                .filter(Boolean);
+
+            try {
+                const response = await fetch('/coverage/analyze', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        limit_cards: limitCards,
+                        marks,
+                        include_examples: includeExamples,
+                        force_refresh: forceRefresh
+                    })
+                });
+                const data = await response.json();
+                output.textContent = pretty(data);
+            } catch (error) {
+                output.textContent = `Coverage error: ${error.message}`;
             }
         }
 

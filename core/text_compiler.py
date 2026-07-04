@@ -13,6 +13,7 @@ _STATUS_MAP = {
     "asleep": "Asleep",
     "confused": "Confused",
 }
+_POKEMON_TOKEN = r"(?:Pokemon|Pokémon)"
 
 
 def normalize_card_text(text: str) -> str:
@@ -30,12 +31,27 @@ class TextTemplate:
     builder: Callable[[re.Match[str]], list[EffectOperation]]
 
 
+def _coerce_count(raw: str) -> int:
+    lowered = raw.strip().lower()
+    if lowered in {"a", "an"}:
+        return 1
+    if lowered == "all":
+        return -1
+    return int(lowered)
+
+
 def _damage_to_active(match: re.Match[str]) -> list[EffectOperation]:
     return [
         EffectOperation(
             op="deal_damage",
             params={"target": "opponent_active", "amount": int(match.group("damage"))},
         )
+    ]
+
+
+def _damage_to_self(match: re.Match[str]) -> list[EffectOperation]:
+    return [
+        EffectOperation(op="deal_damage", params={"target": "self_active", "amount": int(match.group("damage"))})
     ]
 
 
@@ -53,10 +69,15 @@ def _bonus_damage_to_active(match: re.Match[str]) -> list[EffectOperation]:
 
 
 def _damage_to_bench(match: re.Match[str]) -> list[EffectOperation]:
+    count_raw = match.groupdict().get("count")
     return [
         EffectOperation(
             op="deal_damage",
-            params={"target": "opponent_bench", "amount": int(match.group("damage"))},
+            params={
+                "target": "opponent_bench",
+                "amount": int(match.group("damage")),
+                "count": int(count_raw) if count_raw else 1,
+            },
         )
     ]
 
@@ -70,11 +91,29 @@ def _draw_cards(match: re.Match[str]) -> list[EffectOperation]:
     ]
 
 
+def _draw_until_hand_size(match: re.Match[str]) -> list[EffectOperation]:
+    return [
+        EffectOperation(
+            op="draw_until_hand_size",
+            params={"target": "self_player", "count": int(match.group("count"))},
+        )
+    ]
+
+
 def _heal_self(match: re.Match[str]) -> list[EffectOperation]:
     return [
         EffectOperation(
             op="heal_damage",
             params={"target": "self_active", "amount": int(match.group("amount"))},
+        )
+    ]
+
+
+def _heal_any_self_pokemon(match: re.Match[str]) -> list[EffectOperation]:
+    return [
+        EffectOperation(
+            op="heal_damage",
+            params={"target": "self_pokemon", "amount": int(match.group("amount"))},
         )
     ]
 
@@ -91,8 +130,117 @@ def _status_to_opponent(match: re.Match[str]) -> list[EffectOperation]:
 
 def _status_to_self(match: re.Match[str]) -> list[EffectOperation]:
     status = _STATUS_MAP[match.group("status").lower()]
+    return [EffectOperation(op="apply_status", params={"target": "self_active", "status": status})]
+
+
+def _search_deck_to_hand_single(match: re.Match[str]) -> list[EffectOperation]:
+    descriptor = normalize_card_text(match.group("descriptor"))
     return [
-        EffectOperation(op="apply_status", params={"target": "self_active", "status": status})
+        EffectOperation(
+            op="search_deck_to_hand",
+            params={"count": 1, "descriptor": descriptor, "reveal": True},
+        ),
+        EffectOperation(op="shuffle_deck", params={"target": "self_player"}),
+    ]
+
+
+def _search_deck_to_hand_multi(match: re.Match[str]) -> list[EffectOperation]:
+    descriptor = normalize_card_text(match.group("descriptor"))
+    return [
+        EffectOperation(
+            op="search_deck_to_hand",
+            params={
+                "count": int(match.group("count")),
+                "descriptor": descriptor,
+                "reveal": True,
+                "allow_less": True,
+            },
+        ),
+        EffectOperation(op="shuffle_deck", params={"target": "self_player"}),
+    ]
+
+
+def _shuffle_deck(match: re.Match[str]) -> list[EffectOperation]:
+    _ = match
+    return [EffectOperation(op="shuffle_deck", params={"target": "self_player"})]
+
+
+def _switch_self_active(match: re.Match[str]) -> list[EffectOperation]:
+    _ = match
+    return [EffectOperation(op="switch_active_with_bench", params={"target": "self_player"})]
+
+
+def _switch_opponent_active(match: re.Match[str]) -> list[EffectOperation]:
+    _ = match
+    return [EffectOperation(op="switch_active_with_bench", params={"target": "opponent_player"})]
+
+
+def _discard_energy_from_self(match: re.Match[str]) -> list[EffectOperation]:
+    return [
+        EffectOperation(
+            op="discard_energy",
+            params={"target": "self_active", "count": _coerce_count(match.group("count"))},
+        )
+    ]
+
+
+def _attach_energy_from_hand(match: re.Match[str]) -> list[EffectOperation]:
+    raw_count = match.group("count")
+    count = int(raw_count) if raw_count else 1
+    return [
+        EffectOperation(
+            op="attach_energy",
+            params={
+                "source": "hand",
+                "target": "self_pokemon",
+                "count": count,
+                "descriptor": normalize_card_text(match.group("descriptor")),
+            },
+        )
+    ]
+
+
+def _attach_energy_from_discard(match: re.Match[str]) -> list[EffectOperation]:
+    raw_count = match.group("count")
+    count = int(raw_count) if raw_count else 1
+    return [
+        EffectOperation(
+            op="attach_energy",
+            params={
+                "source": "discard",
+                "target": "self_pokemon",
+                "count": count,
+                "descriptor": normalize_card_text(match.group("descriptor")),
+            },
+        )
+    ]
+
+
+def _choose_opponent_bench(match: re.Match[str]) -> list[EffectOperation]:
+    return [EffectOperation(op="select_opponent_bench", params={"count": int(match.group("count"))})]
+
+
+def _prevent_damage_next_turn(match: re.Match[str]) -> list[EffectOperation]:
+    return [
+        EffectOperation(
+            op="modify_incoming_damage_next_turn",
+            params={"target": "self_active", "amount": int(match.group("amount"))},
+        )
+    ]
+
+
+def _no_weakness_resistance(match: re.Match[str]) -> list[EffectOperation]:
+    _ = match
+    return [EffectOperation(op="ignore_weakness_resistance", params={"target": "attack"})]
+
+
+def _cannot_attack_next_turn(match: re.Match[str]) -> list[EffectOperation]:
+    _ = match
+    return [
+        EffectOperation(
+            op="apply_temporary_rule",
+            params={"target": "self_active", "rule": "cannot_attack_next_turn"},
+        )
     ]
 
 
@@ -110,16 +258,25 @@ CLAUSE_TEMPLATES: list[TextTemplate] = [
         name="damage_active",
         description="Deal fixed damage to the opponent's Active Pokémon.",
         pattern=re.compile(
-            r"^(?:This attack does )?(?P<damage>\d+) damage(?: to your opponent's Active Pokémon)?\.$",
+            rf"^(?:This attack does )?(?P<damage>\d+) damage(?: to your opponent's Active {_POKEMON_TOKEN})?\.$",
             re.IGNORECASE,
         ),
         builder=_damage_to_active,
     ),
     TextTemplate(
-        name="damage_bench",
-        description="Deal fixed damage to one Benched Pokémon.",
+        name="damage_self",
+        description="Deal fixed damage to your own Active Pokémon.",
         pattern=re.compile(
-            r"^This attack does (?P<damage>\d+) damage to 1 of your opponent's Benched Pokémon\.$",
+            rf"^This {_POKEMON_TOKEN} does (?P<damage>\d+) damage to itself\.$",
+            re.IGNORECASE,
+        ),
+        builder=_damage_to_self,
+    ),
+    TextTemplate(
+        name="damage_bench",
+        description="Deal fixed damage to one or more Benched Pokémon.",
+        pattern=re.compile(
+            rf"^This attack does (?P<damage>\d+) damage to (?:(?P<count>\d+) of your opponent's Benched {_POKEMON_TOKEN}|1 of your opponent's Benched {_POKEMON_TOKEN}|that {_POKEMON_TOKEN})\.$",
             re.IGNORECASE,
         ),
         builder=_damage_to_bench,
@@ -131,16 +288,34 @@ CLAUSE_TEMPLATES: list[TextTemplate] = [
         builder=_draw_cards,
     ),
     TextTemplate(
+        name="draw_until_hand_size",
+        description="Draw cards until a target hand size.",
+        pattern=re.compile(
+            r"^Draw cards until you have (?P<count>\d+) cards in your hand\.$",
+            re.IGNORECASE,
+        ),
+        builder=_draw_until_hand_size,
+    ),
+    TextTemplate(
         name="heal_self",
         description="Heal your own Active Pokémon.",
-        pattern=re.compile(r"^Heal (?P<amount>\d+) damage from this Pokémon\.$", re.IGNORECASE),
+        pattern=re.compile(rf"^Heal (?P<amount>\d+) damage from this {_POKEMON_TOKEN}\.$", re.IGNORECASE),
         builder=_heal_self,
+    ),
+    TextTemplate(
+        name="heal_self_any",
+        description="Heal one of your Pokémon.",
+        pattern=re.compile(
+            rf"^Heal (?P<amount>\d+) damage from 1 of your {_POKEMON_TOKEN}\.$",
+            re.IGNORECASE,
+        ),
+        builder=_heal_any_self_pokemon,
     ),
     TextTemplate(
         name="status_opponent",
         description="Apply a status condition to opponent's Active Pokémon.",
         pattern=re.compile(
-            r"^Your opponent's Active Pokémon is now (?P<status>Poisoned|Burned|Paralyzed|Asleep|Confused)\.$",
+            rf"^Your opponent's Active {_POKEMON_TOKEN} is now (?P<status>Poisoned|Burned|Paralyzed|Asleep|Confused)\.$",
             re.IGNORECASE,
         ),
         builder=_status_to_opponent,
@@ -149,10 +324,115 @@ CLAUSE_TEMPLATES: list[TextTemplate] = [
         name="status_self",
         description="Apply a status condition to your own Active Pokémon.",
         pattern=re.compile(
-            r"^This Pokémon is now (?P<status>Poisoned|Burned|Paralyzed|Asleep|Confused)\.$",
+            rf"^This {_POKEMON_TOKEN} is now (?P<status>Poisoned|Burned|Paralyzed|Asleep|Confused)\.$",
             re.IGNORECASE,
         ),
         builder=_status_to_self,
+    ),
+    TextTemplate(
+        name="search_deck_to_hand_single",
+        description="Search deck for one matching card and add to hand.",
+        pattern=re.compile(
+            r"^Search your deck for (?:a|an) (?P<descriptor>.+?) card, reveal it, and put it into your hand\. Then, shuffle your deck\.$",
+            re.IGNORECASE,
+        ),
+        builder=_search_deck_to_hand_single,
+    ),
+    TextTemplate(
+        name="search_deck_to_hand_multi",
+        description="Search deck for up to N matching cards and add to hand.",
+        pattern=re.compile(
+            r"^Search your deck for up to (?P<count>\d+) (?P<descriptor>.+?) cards, reveal them, and put them into your hand\. Then, shuffle your deck\.$",
+            re.IGNORECASE,
+        ),
+        builder=_search_deck_to_hand_multi,
+    ),
+    TextTemplate(
+        name="shuffle_deck",
+        description="Shuffle your deck.",
+        pattern=re.compile(r"^Shuffle your deck\.$", re.IGNORECASE),
+        builder=_shuffle_deck,
+    ),
+    TextTemplate(
+        name="switch_self_active",
+        description="Switch your Active Pokémon with one of your Benched Pokémon.",
+        pattern=re.compile(
+            rf"^Switch your Active {_POKEMON_TOKEN} with 1 of your Benched {_POKEMON_TOKEN}\.$",
+            re.IGNORECASE,
+        ),
+        builder=_switch_self_active,
+    ),
+    TextTemplate(
+        name="switch_opponent_active",
+        description="Force opponent to switch Active Pokémon.",
+        pattern=re.compile(
+            rf"^Your opponent switches their Active {_POKEMON_TOKEN} with 1 of their Benched {_POKEMON_TOKEN}\.$",
+            re.IGNORECASE,
+        ),
+        builder=_switch_opponent_active,
+    ),
+    TextTemplate(
+        name="discard_energy_self",
+        description="Discard energy from this Pokémon.",
+        pattern=re.compile(
+            rf"^Discard (?P<count>a|an|all|\d+) Energy from this {_POKEMON_TOKEN}\.$",
+            re.IGNORECASE,
+        ),
+        builder=_discard_energy_from_self,
+    ),
+    TextTemplate(
+        name="attach_energy_from_hand",
+        description="Attach energy card(s) from hand to your Pokémon.",
+        pattern=re.compile(
+            rf"^Attach (?:up to (?P<count>\d+) |a |an )(?P<descriptor>.+?) Energy card from your hand to 1 of your {_POKEMON_TOKEN}\.$",
+            re.IGNORECASE,
+        ),
+        builder=_attach_energy_from_hand,
+    ),
+    TextTemplate(
+        name="attach_energy_from_discard",
+        description="Attach energy card(s) from discard to your Pokémon.",
+        pattern=re.compile(
+            rf"^Attach (?:up to (?P<count>\d+) |a |an )(?P<descriptor>.+?) Energy card from your discard pile to 1 of your {_POKEMON_TOKEN}\.$",
+            re.IGNORECASE,
+        ),
+        builder=_attach_energy_from_discard,
+    ),
+    TextTemplate(
+        name="choose_opponent_bench",
+        description="Choose opponent Benched Pokémon target(s).",
+        pattern=re.compile(
+            rf"^Choose (?P<count>\d+) of your opponent's Benched {_POKEMON_TOKEN}\.$",
+            re.IGNORECASE,
+        ),
+        builder=_choose_opponent_bench,
+    ),
+    TextTemplate(
+        name="prevent_damage_next_turn",
+        description="Apply next-turn incoming damage reduction.",
+        pattern=re.compile(
+            rf"^During your opponent's next turn, this {_POKEMON_TOKEN} takes (?P<amount>\d+) less damage from attacks\.$",
+            re.IGNORECASE,
+        ),
+        builder=_prevent_damage_next_turn,
+    ),
+    TextTemplate(
+        name="ignore_weakness_resistance",
+        description="Ignore Weakness and Resistance for this attack.",
+        pattern=re.compile(
+            r"^This attack's damage isn't affected by Weakness or Resistance\.$",
+            re.IGNORECASE,
+        ),
+        builder=_no_weakness_resistance,
+    ),
+    TextTemplate(
+        name="cannot_attack_next_turn",
+        description="This Pokémon cannot attack during your next turn.",
+        pattern=re.compile(
+            rf"^During your next turn, this {_POKEMON_TOKEN} can't attack\.$",
+            re.IGNORECASE,
+        ),
+        builder=_cannot_attack_next_turn,
     ),
 ]
 
@@ -163,6 +443,7 @@ COIN_FLIP_TEMPLATE = re.compile(
 
 
 def _split_sentences(text: str) -> list[str]:
+    text = text.replace("; ", ". ")
     sentences = re.split(r"(?<=[.!?])\s+", text)
     return [segment.strip() for segment in sentences if segment.strip()]
 
@@ -180,6 +461,15 @@ def _merge_coin_flip_sequences(sentences: list[str]) -> list[str]:
         ):
             merged.append(f"{current} {sentences[index + 1]} {sentences[index + 2]}")
             index += 3
+            continue
+
+        if (
+            current.lower().startswith("search your deck for")
+            and index + 1 < len(sentences)
+            and sentences[index + 1].lower() == "then, shuffle your deck."
+        ):
+            merged.append(f"{current} {sentences[index + 1]}")
+            index += 2
             continue
 
         merged.append(current)

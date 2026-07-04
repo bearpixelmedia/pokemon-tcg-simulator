@@ -5,6 +5,7 @@ from typing import Any
 
 from core.card_blueprints import build_card_from_blueprint, list_blueprints
 from core.effects import apply_effect_program, apply_pokemon_checkup, create_demo_state
+from core.standard_coverage import run_standard_coverage_analysis
 from core.text_compiler import compile_effect_text, supported_templates
 
 
@@ -20,6 +21,20 @@ def analyze_card_text(text: str) -> dict[str, Any]:
 
 def build_blueprint_card(blueprint_key: str, variables: dict[str, Any] | None = None) -> dict[str, Any]:
     return build_card_from_blueprint(blueprint_key, variables)
+
+
+def analyze_standard_coverage(
+    limit_cards: int | None = 250,
+    marks: tuple[str, ...] = ("H", "I", "J"),
+    include_examples: bool = True,
+    force_refresh: bool = False,
+) -> dict[str, Any]:
+    return run_standard_coverage_analysis(
+        marks=marks,
+        limit_cards=limit_cards,
+        include_examples=include_examples,
+        force_refresh=force_refresh,
+    )
 
 
 def run_simulation(turn_limit: int = 10, seed: int | None = None) -> dict[str, Any]:

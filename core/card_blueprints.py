@@ -64,6 +64,35 @@ BLUEPRINTS: dict[str, CardBlueprint] = {
         text_template="Draw {draw_count} cards. Heal {heal_amount} damage from this Pokémon.",
         defaults={"draw_count": 2, "heal_amount": 30},
     ),
+    "setup_search": CardBlueprint(
+        key="setup_search",
+        name="Setup Search",
+        description="Deck tutor pattern for consistency cards.",
+        text_template=(
+            "Search your deck for a {descriptor} card, reveal it, and put it into your hand. "
+            "Then, shuffle your deck."
+        ),
+        defaults={"descriptor": "Basic Pokémon"},
+    ),
+    "pivot_guard": CardBlueprint(
+        key="pivot_guard",
+        name="Pivot Guard",
+        description="Switch effect plus temporary damage reduction.",
+        text_template=(
+            "Switch your Active Pokémon with 1 of your Benched Pokémon. "
+            "During your opponent's next turn, this Pokémon takes {reduction} less damage from attacks."
+        ),
+        defaults={"reduction": 30},
+    ),
+    "energy_recycle": CardBlueprint(
+        key="energy_recycle",
+        name="Energy Recycle",
+        description="Attach Energy from discard to your board.",
+        text_template=(
+            "Attach up to {count} {descriptor} Energy card from your discard pile to 1 of your Pokémon."
+        ),
+        defaults={"count": 2, "descriptor": "Basic"},
+    ),
 }
 
 
