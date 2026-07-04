@@ -12,12 +12,14 @@ def create_demo_state() -> dict[str, Any]:
             "p1": {
                 "name": "You",
                 "hand_size": 5,
-                "active": {"hp": 120, "max_hp": 120, "status": []},
+                "active": {"hp": 120, "max_hp": 120, "status": [], "energy_attached": 1},
+                "bench_size": 2,
             },
             "p2": {
                 "name": "AI",
                 "hand_size": 5,
-                "active": {"hp": 120, "max_hp": 120, "status": []},
+                "active": {"hp": 120, "max_hp": 120, "status": [], "energy_attached": 1},
+                "bench_size": 2,
             },
         }
     }
@@ -28,9 +30,11 @@ def _opponent(actor: str) -> str:
 
 
 def _target_slot(state: dict[str, Any], actor: str, target: str) -> dict[str, Any]:
-    if target == "self_active":
+    if target in {"self_active", "self_pokemon"}:
         return state["players"][actor]["active"]
     if target == "opponent_active":
+        return state["players"][_opponent(actor)]["active"]
+    if target == "opponent_bench":
         return state["players"][_opponent(actor)]["active"]
     raise ValueError(f"Unsupported target '{target}' for demo engine")
 
@@ -89,6 +93,65 @@ def _apply_operation(
         draw_count = int(normalized.params["count"])
         state["players"][actor]["hand_size"] += draw_count
         events.append(f"{actor} drew {draw_count} cards.")
+        return
+
+    if normalized.op == "draw_until_hand_size":
+        target_size = int(normalized.params["count"])
+        current = state["players"][actor]["hand_size"]
+        if current < target_size:
+            drawn = target_size - current
+            state["players"][actor]["hand_size"] = target_size
+            events.append(f"{actor} drew {drawn} cards to reach hand size {target_size}.")
+        else:
+            events.append(f"{actor} already has at least {target_size} cards in hand.")
+        return
+
+    if normalized.op == "search_deck_to_hand":
+        count = int(normalized.params.get("count", 1))
+        state["players"][actor]["hand_size"] += count
+        descriptor = normalized.params.get("descriptor", "matching")
+        events.append(f"{actor} searched deck for {count} {descriptor} card(s).")
+        return
+
+    if normalized.op == "shuffle_deck":
+        events.append(f"{actor} shuffled their deck.")
+        return
+
+    if normalized.op == "switch_active_with_bench":
+        target = normalized.params.get("target", "self_player")
+        owner = actor if target == "self_player" else _opponent(actor)
+        events.append(f"{owner} switched their Active Pokémon with a Benched Pokémon.")
+        return
+
+    if normalized.op == "discard_energy":
+        slot = _target_slot(state, actor, normalized.params["target"])
+        count = int(normalized.params.get("count", 1))
+        if count < 0:
+            discarded = slot.get("energy_attached", 0)
+            slot["energy_attached"] = 0
+        else:
+            discarded = min(slot.get("energy_attached", 0), count)
+            slot["energy_attached"] = max(0, slot.get("energy_attached", 0) - discarded)
+        events.append(f"{actor} discarded {discarded} Energy from {normalized.params['target']}.")
+        return
+
+    if normalized.op == "attach_energy":
+        count = int(normalized.params.get("count", 1))
+        slot = state["players"][actor]["active"]
+        slot["energy_attached"] = slot.get("energy_attached", 0) + count
+        events.append(f"{actor} attached {count} Energy from {normalized.params.get('source', 'unknown')}.")
+        return
+
+    if normalized.op == "modify_incoming_damage_next_turn":
+        slot = state["players"][actor]["active"]
+        slot["incoming_damage_reduction_next_turn"] = int(normalized.params.get("amount", 0))
+        events.append(
+            f"{actor} gained {slot['incoming_damage_reduction_next_turn']} damage reduction for next turn."
+        )
+        return
+
+    if normalized.op in {"ignore_weakness_resistance", "apply_temporary_rule", "select_opponent_bench"}:
+        events.append(f"{actor} prepared effect: {normalized.op}.")
         return
 
     if normalized.op == "flip_coin":

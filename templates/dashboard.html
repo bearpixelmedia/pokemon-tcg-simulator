@@ -38,7 +38,7 @@
             align-items: start;
         }
 
-        textarea, select, input {
+        textarea, select, input:not([type="checkbox"]) {
             width: 100%;
             background: #0b1220;
             color: #e2e8f0;
@@ -76,6 +76,11 @@
         .muted {
             color: #93c5fd;
             font-size: 0.92rem;
+        }
+
+        label input[type="checkbox"] {
+            width: auto;
+            margin-right: 8px;
         }
     </style>
 </head>
@@ -120,6 +125,80 @@
                 <button onclick="buildCard()">Build Card From Blueprint</button>
             </div>
             <pre id="blueprint-output">Blueprint output will appear here.</pre>
+        </section>
+
+        <section class="card">
+            <h2>Standard Coverage Analyzer</h2>
+            <p class="muted">
+                Ingests regulation-mark cards (H/I/J), compiles text blocks, and reports resolved vs unresolved coverage.
+            </p>
+            <div class="row">
+                <div>
+                    <label for="coverage-limit">Card Limit (null or 0 = full)</label>
+                    <input id="coverage-limit" value="250" />
+                </div>
+                <div>
+                    <label for="coverage-marks">Regulation Marks (comma-separated)</label>
+                    <input id="coverage-marks" value="H,I,J" />
+                </div>
+            </div>
+            <div style="margin-top: 10px;" class="row">
+                <label><input id="coverage-examples" type="checkbox" checked /> Include unresolved examples</label>
+                <label><input id="coverage-refresh" type="checkbox" /> Force refresh (skip cache)</label>
+            </div>
+            <div style="margin-top: 10px;">
+                <button onclick="runCoverageAnalysis()">Run Coverage Analysis</button>
+            </div>
+            <pre id="coverage-output">Coverage analysis output will appear here.</pre>
+        </section>
+
+        <section class="card">
+            <h2>Template Recommendation Miner</h2>
+            <p class="muted">
+                Clusters unresolved wording and suggests next template candidates ranked by impact.
+            </p>
+            <div class="row">
+                <div>
+                    <label for="reco-limit">Card Limit (null or 0 = full)</label>
+                    <input id="reco-limit" value="300" />
+                </div>
+                <div>
+                    <label for="reco-marks">Regulation Marks (comma-separated)</label>
+                    <input id="reco-marks" value="H,I,J" />
+                </div>
+            </div>
+            <div style="margin-top: 10px;" class="row">
+                <label><input id="reco-refresh" type="checkbox" /> Force refresh</label>
+            </div>
+            <div style="margin-top: 10px;">
+                <button onclick="runTemplateRecommendations()">Run Template Miner</button>
+            </div>
+            <pre id="reco-output">Template recommendations will appear here.</pre>
+        </section>
+
+        <section class="card">
+            <h2>YOLO Full Pass</h2>
+            <p class="muted">
+                Runs coverage analysis, unresolved clustering, and snapshot artifact export in one sequential pass.
+            </p>
+            <div class="row">
+                <div>
+                    <label for="yolo-limit">Card Limit (null or 0 = full)</label>
+                    <input id="yolo-limit" value="350" />
+                </div>
+                <div>
+                    <label for="yolo-marks">Regulation Marks (comma-separated)</label>
+                    <input id="yolo-marks" value="H,I,J" />
+                </div>
+            </div>
+            <div style="margin-top: 10px;" class="row">
+                <label><input id="yolo-examples" type="checkbox" checked /> Include unresolved examples</label>
+                <label><input id="yolo-refresh" type="checkbox" /> Force refresh</label>
+            </div>
+            <div style="margin-top: 10px;">
+                <button onclick="runYoloPass()">Run YOLO Pass</button>
+            </div>
+            <pre id="yolo-output">YOLO pipeline output will appear here.</pre>
         </section>
     </main>
 
@@ -214,6 +293,136 @@
                 output.textContent = pretty(data);
             } catch (error) {
                 output.textContent = `Build error: ${error.message}`;
+            }
+        }
+
+        async function runCoverageAnalysis() {
+            const output = document.getElementById('coverage-output');
+            output.textContent = 'Analyzing coverage (this can take a bit)...';
+
+            const rawLimit = document.getElementById('coverage-limit').value.trim();
+            const marksRaw = document.getElementById('coverage-marks').value.trim();
+            const includeExamples = document.getElementById('coverage-examples').checked;
+            const forceRefresh = document.getElementById('coverage-refresh').checked;
+
+            let limitCards = 250;
+            if (rawLimit === '' || rawLimit.toLowerCase() === 'null') {
+                limitCards = null;
+            } else {
+                const parsed = Number(rawLimit);
+                if (!Number.isFinite(parsed)) {
+                    output.textContent = 'Card Limit must be a number, 0, or null.';
+                    return;
+                }
+                limitCards = parsed;
+            }
+
+            const marks = marksRaw
+                .split(',')
+                .map(value => value.trim().toUpperCase())
+                .filter(Boolean);
+
+            try {
+                const response = await fetch('/coverage/analyze', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        limit_cards: limitCards,
+                        marks,
+                        include_examples: includeExamples,
+                        force_refresh: forceRefresh
+                    })
+                });
+                const data = await response.json();
+                output.textContent = pretty(data);
+            } catch (error) {
+                output.textContent = `Coverage error: ${error.message}`;
+            }
+        }
+
+        async function runTemplateRecommendations() {
+            const output = document.getElementById('reco-output');
+            output.textContent = 'Mining template recommendations...';
+
+            const rawLimit = document.getElementById('reco-limit').value.trim();
+            const marksRaw = document.getElementById('reco-marks').value.trim();
+            const forceRefresh = document.getElementById('reco-refresh').checked;
+
+            let limitCards = 300;
+            if (rawLimit === '' || rawLimit.toLowerCase() === 'null') {
+                limitCards = null;
+            } else {
+                const parsed = Number(rawLimit);
+                if (!Number.isFinite(parsed)) {
+                    output.textContent = 'Card Limit must be a number, 0, or null.';
+                    return;
+                }
+                limitCards = parsed;
+            }
+
+            const marks = marksRaw
+                .split(',')
+                .map(value => value.trim().toUpperCase())
+                .filter(Boolean);
+
+            try {
+                const response = await fetch('/coverage/recommend_templates', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        limit_cards: limitCards,
+                        marks,
+                        force_refresh: forceRefresh
+                    })
+                });
+                const data = await response.json();
+                output.textContent = pretty(data);
+            } catch (error) {
+                output.textContent = `Recommendation error: ${error.message}`;
+            }
+        }
+
+        async function runYoloPass() {
+            const output = document.getElementById('yolo-output');
+            output.textContent = 'Running full YOLO pass (coverage -> mining -> snapshot export)...';
+
+            const rawLimit = document.getElementById('yolo-limit').value.trim();
+            const marksRaw = document.getElementById('yolo-marks').value.trim();
+            const includeExamples = document.getElementById('yolo-examples').checked;
+            const forceRefresh = document.getElementById('yolo-refresh').checked;
+
+            let limitCards = 350;
+            if (rawLimit === '' || rawLimit.toLowerCase() === 'null') {
+                limitCards = null;
+            } else {
+                const parsed = Number(rawLimit);
+                if (!Number.isFinite(parsed)) {
+                    output.textContent = 'Card Limit must be a number, 0, or null.';
+                    return;
+                }
+                limitCards = parsed;
+            }
+
+            const marks = marksRaw
+                .split(',')
+                .map(value => value.trim().toUpperCase())
+                .filter(Boolean);
+
+            try {
+                const response = await fetch('/yolo/run', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        limit_cards: limitCards,
+                        marks,
+                        include_examples: includeExamples,
+                        force_refresh: forceRefresh
+                    })
+                });
+                const data = await response.json();
+                output.textContent = pretty(data);
+            } catch (error) {
+                output.textContent = `YOLO error: ${error.message}`;
             }
         }
 

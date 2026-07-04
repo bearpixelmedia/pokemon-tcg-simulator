@@ -14,6 +14,12 @@ Complete modular engine with:
   Defines variable wording blueprints so one template can generate many card effects.
 - `core/effects.py`  
   Applies compiled operations to a simulation state.
+- `core/standard_coverage.py`  
+  Ingests Standard-legal cards by regulation mark and reports text-template coverage.
+- `core/template_mining.py`  
+  Clusters unresolved clauses and suggests candidate template patterns.
+- `core/yolo_pipeline.py`  
+  Runs the sequential YOLO pipeline and writes snapshot artifacts.
 - `sim/game.py`  
   Runs AI vs AI simulations using blueprint-generated card text.
 - `templates/dashboard.html`  
@@ -33,3 +39,15 @@ Then open http://127.0.0.1:5000
 - `POST /compile_text` -> compile card text into operation DSL
 - `GET /blueprints` -> list available variable wording blueprints
 - `POST /build_card` -> instantiate blueprint with variables and compile it
+- `POST /coverage/analyze` -> run Standard card text coverage analysis
+- `POST /coverage/recommend_templates` -> mine unresolved clauses into template candidates
+- `POST /yolo/run` -> execute coverage + mining + snapshot export in one pass
+
+## YOLO run artifacts
+
+Running `/yolo/run` writes JSON artifacts under:
+
+- `/workspace/artifacts/yolo/coverage_latest.json`
+- `/workspace/artifacts/yolo/mining_latest.json`
+- `/workspace/artifacts/yolo/yolo_latest.json`
+- plus timestamped history snapshots
