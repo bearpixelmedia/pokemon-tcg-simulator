@@ -36,6 +36,8 @@ Complete modular engine with:
   Timing window bus for deterministic trigger dispatch with ordered replacement/prevention/normal handler priority.
 - `core/effect_layers.py`  
   Continuous-effect layer resolver for rule stacking and modifier precedence.
+- `core/priority_stack_policy.py`  
+  Centralized replacement/prevention priority policy and timing-rule ordering helpers used across runtime modules.
 - `core/targeting.py`  
   Target legality helpers for selector/count validation.
 - `core/cost_engine.py`  

@@ -7,6 +7,12 @@ from typing import Any
 from core.cost_engine import pay_cost
 from core.effect_layers import ContinuousRule, ContinuousRuleEngine, EffectLayer
 from core.effect_types import EffectOperation, EffectProgram
+from core.priority_stack_policy import (
+    infer_stack_kind,
+    operations_from_timing_rules,
+    resolve_damage_with_priority_stack,
+    rule_applies_to_damage_target,
+)
 from core.rules_mechanics import create_active_pokemon
 from core.targeting import validate_target_selector
 from core.timing_windows import TimingBus, TimingEvent, TimingWindow
@@ -142,42 +148,6 @@ def _resolve_layered_damage(state: dict[str, Any], base_amount: int) -> int:
     return max(0, int(resolved.get("damage", base_amount)))
 
 
-def _infer_stack_kind(params: dict[str, Any]) -> str:
-    explicit = str(params.get("kind", "")).strip().lower()
-    if explicit in {"replacement", "prevention", "normal"}:
-        return explicit
-    source = " ".join(
-        str(params.get(key, ""))
-        for key in ("rule", "clause", "hook_id")
-    ).lower()
-    if "prevent" in source or "immune" in source:
-        return "prevention"
-    if "replace" in source or "instead" in source:
-        return "replacement"
-    return "normal"
-
-
-def _target_owner_from_selector(actor: str, selector: str) -> str:
-    return actor if selector.startswith("self_") else _opponent(actor)
-
-
-def _rule_applies_to_damage_target(rule: dict[str, Any], attacker: str, target_selector: str) -> bool:
-    owner = str(rule.get("owner", ""))
-    if owner not in {"p1", "p2"}:
-        return True
-
-    target_owner = _target_owner_from_selector(attacker, target_selector)
-    target_scope = str(rule.get("target", "any"))
-
-    if target_scope in {"any", "any_pokemon", "both_active"}:
-        return True
-    if target_scope in {"self_player", "self_active", "self_pokemon"}:
-        return target_owner == owner
-    if target_scope in {"opponent_player", "opponent_active", "opponent_pokemon"}:
-        return target_owner != owner
-    return True
-
-
 def _resolve_replacement_prevention_stack(
     state: dict[str, Any],
     actor: str,
@@ -189,45 +159,14 @@ def _resolve_replacement_prevention_stack(
     if not stack:
         return max(0, amount)
 
-    kind_order = {"replacement": 0, "prevention": 1, "normal": 2}
     active_rules = [
         rule
         for rule in stack
         if int(rule.get("turns_remaining", 0)) > 0
-        and _rule_applies_to_damage_target(rule, actor, target_selector)
+        and rule_applies_to_damage_target(rule, actor, target_selector, _opponent(actor))
     ]
-    active_rules.sort(
-        key=lambda rule: (
-            kind_order.get(str(rule.get("kind", "normal")), 99),
-            -int(rule.get("priority", 100)),
-        )
-    )
-
-    resolved = max(0, amount)
-    for rule in active_rules:
-        kind = str(rule.get("kind", "normal"))
-        source = str(rule.get("source", "rule"))
-        if kind == "replacement":
-            if "set_amount" in rule:
-                resolved = max(0, int(rule["set_amount"]))
-                events.append(f"Replacement rule '{source}' set damage to {resolved}.")
-            if "amount_delta" in rule:
-                resolved = max(0, resolved + int(rule["amount_delta"]))
-                events.append(f"Replacement rule '{source}' adjusted damage to {resolved}.")
-            if "multiplier" in rule:
-                resolved = max(0, int(round(resolved * float(rule["multiplier"]))))
-                events.append(f"Replacement rule '{source}' multiplied damage to {resolved}.")
-        elif kind == "prevention":
-            if bool(rule.get("prevent_all", False)):
-                events.append(f"Prevention rule '{source}' prevented all damage.")
-                return 0
-            prevent_amount = int(rule.get("prevent_amount", 0))
-            if prevent_amount > 0:
-                resolved = max(0, resolved - prevent_amount)
-                events.append(
-                    f"Prevention rule '{source}' reduced damage by {prevent_amount} to {resolved}."
-                )
-
+    resolved, traces = resolve_damage_with_priority_stack(amount, active_rules)
+    events.extend(traces)
     return max(0, resolved)
 
 
@@ -236,36 +175,12 @@ def _operations_from_timing_rule_stack(
     actor: str,
     window: TimingWindow,
 ) -> list[dict[str, Any]]:
-    kind_order = {"replacement": 0, "prevention": 1, "normal": 2}
-    ordered: list[tuple[int, int, int, dict[str, Any]]] = []
-    for index, rule in enumerate(state.get("timing_rule_stack", [])):
-        if str(rule.get("window", "")) != window.value:
-            continue
-        if int(rule.get("turns_remaining", 1)) <= 0:
-            continue
-        owner = str(rule.get("owner", ""))
-        target_scope = str(rule.get("target", "self_player"))
-        applies = True
-        if owner in {"p1", "p2"}:
-            if target_scope.startswith("self_"):
-                applies = owner == actor
-            elif target_scope.startswith("opponent_"):
-                applies = owner != actor
-        if not applies:
-            continue
-        operation = rule.get("operation", {})
-        if not isinstance(operation, dict):
-            continue
-        ordered.append(
-            (
-                kind_order.get(str(rule.get("kind", "normal")), 99),
-                -int(rule.get("priority", 100)),
-                index,
-                operation,
-            )
-        )
-    ordered.sort(key=lambda item: (item[0], item[1], item[2]))
-    return [item[3] for item in ordered]
+    return operations_from_timing_rules(
+        timing_rules=list(state.get("timing_rule_stack", [])),
+        actor=actor,
+        opponent_actor=_opponent(actor),
+        window=window.value,
+    )
 
 
 def _apply_script_hook_inference(
@@ -1308,7 +1223,7 @@ def _apply_operation(
         priority = int(params.get("priority", 100))
         turns_remaining = max(1, int(params.get("turns", 1)))
         source = str(params.get("rule", "temporary_rule"))
-        kind = _infer_stack_kind(params)
+        kind = infer_stack_kind(params)
         state.setdefault("continuous_rules", []).append(
             {
                 "source": source,

@@ -5,6 +5,7 @@ from enum import Enum
 from typing import Any, Callable
 
 from core.effect_types import EffectOperation
+from core.priority_stack_policy import stack_order_key
 
 
 class TimingWindow(str, Enum):
@@ -59,16 +60,11 @@ class TimingBus:
         )
 
     def emit(self, event: TimingEvent) -> list[EffectOperation]:
-        kind_order = {
-            TimingHandlerKind.REPLACEMENT: 0,
-            TimingHandlerKind.PREVENTION: 1,
-            TimingHandlerKind.NORMAL: 2,
-        }
         operations: list[EffectOperation] = []
         ordered_handlers = sorted(
-            self._handlers[event.window],
-            key=lambda entry: (kind_order.get(entry.kind, 99), -entry.priority),
+            enumerate(self._handlers[event.window]),
+            key=lambda item: stack_order_key({"kind": item[1].kind.value, "priority": item[1].priority}, item[0]),
         )
-        for entry in ordered_handlers:
+        for _, entry in ordered_handlers:
             operations.extend(entry.handler(event))
         return operations
