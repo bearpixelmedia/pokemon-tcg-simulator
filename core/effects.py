@@ -17,6 +17,8 @@ def create_demo_state() -> dict[str, Any]:
     return {
         "board": {"stadium": None},
         "continuous_rules": [],
+        "replacement_prevention_stack": [],
+        "timing_rule_stack": [],
         "timing_windows": [],
         "players": {
             "p1": {
@@ -138,6 +140,132 @@ def _resolve_layered_damage(state: dict[str, Any], base_amount: int) -> int:
         )
     resolved = engine.resolve({"damage": base_amount})
     return max(0, int(resolved.get("damage", base_amount)))
+
+
+def _infer_stack_kind(params: dict[str, Any]) -> str:
+    explicit = str(params.get("kind", "")).strip().lower()
+    if explicit in {"replacement", "prevention", "normal"}:
+        return explicit
+    source = " ".join(
+        str(params.get(key, ""))
+        for key in ("rule", "clause", "hook_id")
+    ).lower()
+    if "prevent" in source or "immune" in source:
+        return "prevention"
+    if "replace" in source or "instead" in source:
+        return "replacement"
+    return "normal"
+
+
+def _target_owner_from_selector(actor: str, selector: str) -> str:
+    return actor if selector.startswith("self_") else _opponent(actor)
+
+
+def _rule_applies_to_damage_target(rule: dict[str, Any], attacker: str, target_selector: str) -> bool:
+    owner = str(rule.get("owner", ""))
+    if owner not in {"p1", "p2"}:
+        return True
+
+    target_owner = _target_owner_from_selector(attacker, target_selector)
+    target_scope = str(rule.get("target", "any"))
+
+    if target_scope in {"any", "any_pokemon", "both_active"}:
+        return True
+    if target_scope in {"self_player", "self_active", "self_pokemon"}:
+        return target_owner == owner
+    if target_scope in {"opponent_player", "opponent_active", "opponent_pokemon"}:
+        return target_owner != owner
+    return True
+
+
+def _resolve_replacement_prevention_stack(
+    state: dict[str, Any],
+    actor: str,
+    target_selector: str,
+    amount: int,
+    events: list[str],
+) -> int:
+    stack = list(state.get("replacement_prevention_stack", []))
+    if not stack:
+        return max(0, amount)
+
+    kind_order = {"replacement": 0, "prevention": 1, "normal": 2}
+    active_rules = [
+        rule
+        for rule in stack
+        if int(rule.get("turns_remaining", 0)) > 0
+        and _rule_applies_to_damage_target(rule, actor, target_selector)
+    ]
+    active_rules.sort(
+        key=lambda rule: (
+            kind_order.get(str(rule.get("kind", "normal")), 99),
+            -int(rule.get("priority", 100)),
+        )
+    )
+
+    resolved = max(0, amount)
+    for rule in active_rules:
+        kind = str(rule.get("kind", "normal"))
+        source = str(rule.get("source", "rule"))
+        if kind == "replacement":
+            if "set_amount" in rule:
+                resolved = max(0, int(rule["set_amount"]))
+                events.append(f"Replacement rule '{source}' set damage to {resolved}.")
+            if "amount_delta" in rule:
+                resolved = max(0, resolved + int(rule["amount_delta"]))
+                events.append(f"Replacement rule '{source}' adjusted damage to {resolved}.")
+            if "multiplier" in rule:
+                resolved = max(0, int(round(resolved * float(rule["multiplier"]))))
+                events.append(f"Replacement rule '{source}' multiplied damage to {resolved}.")
+        elif kind == "prevention":
+            if bool(rule.get("prevent_all", False)):
+                events.append(f"Prevention rule '{source}' prevented all damage.")
+                return 0
+            prevent_amount = int(rule.get("prevent_amount", 0))
+            if prevent_amount > 0:
+                resolved = max(0, resolved - prevent_amount)
+                events.append(
+                    f"Prevention rule '{source}' reduced damage by {prevent_amount} to {resolved}."
+                )
+
+    return max(0, resolved)
+
+
+def _operations_from_timing_rule_stack(
+    state: dict[str, Any],
+    actor: str,
+    window: TimingWindow,
+) -> list[dict[str, Any]]:
+    kind_order = {"replacement": 0, "prevention": 1, "normal": 2}
+    ordered: list[tuple[int, int, int, dict[str, Any]]] = []
+    for index, rule in enumerate(state.get("timing_rule_stack", [])):
+        if str(rule.get("window", "")) != window.value:
+            continue
+        if int(rule.get("turns_remaining", 1)) <= 0:
+            continue
+        owner = str(rule.get("owner", ""))
+        target_scope = str(rule.get("target", "self_player"))
+        applies = True
+        if owner in {"p1", "p2"}:
+            if target_scope.startswith("self_"):
+                applies = owner == actor
+            elif target_scope.startswith("opponent_"):
+                applies = owner != actor
+        if not applies:
+            continue
+        operation = rule.get("operation", {})
+        if not isinstance(operation, dict):
+            continue
+        ordered.append(
+            (
+                kind_order.get(str(rule.get("kind", "normal")), 99),
+                -int(rule.get("priority", 100)),
+                index,
+                operation,
+            )
+        )
+    ordered.sort(key=lambda item: (item[0], item[1], item[2]))
+    return [item[3] for item in ordered]
 
 
 def _apply_script_hook_inference(
@@ -749,13 +877,31 @@ def apply_effect_program(
     events: list[str] = []
     bus = timing_bus or TimingBus()
     if emit_timing:
-        pre_ops = bus.emit(TimingEvent(window=TimingWindow.BEFORE_ATTACK, actor=actor, payload={"source_text": program.source_text}))
+        pre_ops = _operations_from_timing_rule_stack(state, actor, TimingWindow.BEFORE_ATTACK)
+        pre_ops.extend(
+            bus.emit(
+                TimingEvent(
+                    window=TimingWindow.BEFORE_ATTACK,
+                    actor=actor,
+                    payload={"source_text": program.source_text},
+                )
+            )
+        )
         for operation in pre_ops:
             _apply_operation(operation, state, actor, rng, events)
     for operation in program.operations:
         _apply_operation(operation, state, actor, rng, events)
     if emit_timing:
-        post_ops = bus.emit(TimingEvent(window=TimingWindow.AFTER_ATTACK, actor=actor, payload={"source_text": program.source_text}))
+        post_ops = _operations_from_timing_rule_stack(state, actor, TimingWindow.AFTER_ATTACK)
+        post_ops.extend(
+            bus.emit(
+                TimingEvent(
+                    window=TimingWindow.AFTER_ATTACK,
+                    actor=actor,
+                    payload={"source_text": program.source_text},
+                )
+            )
+        )
         for operation in post_ops:
             _apply_operation(operation, state, actor, rng, events)
     return events
@@ -773,6 +919,13 @@ def _apply_operation(
     if normalized.op == "deal_damage":
         slot = _target_slot(state, actor, normalized.params["target"])
         amount = _resolve_layered_damage(state, int(normalized.params["amount"]))
+        amount = _resolve_replacement_prevention_stack(
+            state,
+            actor,
+            str(normalized.params["target"]),
+            amount,
+            events,
+        )
         if int(slot.get("prevent_all_damage_turns_remaining", 0)) > 0:
             events.append(
                 f"{actor}'s damage was prevented on {normalized.params['target']}."
@@ -1152,18 +1305,68 @@ def _apply_operation(
         modifiers = params.get("modifiers", {})
         if not modifiers and "amount_delta" in params:
             modifiers = {"damage": int(params.get("amount_delta", 0))}
+        priority = int(params.get("priority", 100))
+        turns_remaining = max(1, int(params.get("turns", 1)))
+        source = str(params.get("rule", "temporary_rule"))
+        kind = _infer_stack_kind(params)
         state.setdefault("continuous_rules", []).append(
             {
-                "source": str(params.get("rule", "temporary_rule")),
+                "source": source,
                 "hook_id": params.get("hook_id"),
                 "clause": params.get("clause"),
+                "owner": actor,
                 "target": params.get("target", "self_player"),
-                "priority": int(params.get("priority", 100)),
+                "priority": priority,
                 "layer": int(_coerce_layer(params.get("layer"))),
                 "modifiers": modifiers if isinstance(modifiers, dict) else {},
+                "turns_remaining": turns_remaining,
             }
         )
-        events.append(f"{actor} prepared effect: {normalized.op}.")
+        stack_entry: dict[str, Any] = {
+            "source": source,
+            "owner": actor,
+            "target": params.get("target", "self_player"),
+            "priority": priority,
+            "kind": kind,
+            "turns_remaining": turns_remaining,
+        }
+        if "set_amount" in params:
+            stack_entry["set_amount"] = int(params["set_amount"])
+        if "amount_delta" in params:
+            stack_entry["amount_delta"] = int(params["amount_delta"])
+        if "multiplier" in params:
+            stack_entry["multiplier"] = float(params["multiplier"])
+        if "prevent_amount" in params:
+            stack_entry["prevent_amount"] = int(params["prevent_amount"])
+        if "prevent_all" in params:
+            stack_entry["prevent_all"] = bool(params["prevent_all"])
+        clause_text = str(params.get("clause", "")).lower()
+        if kind == "prevention" and "prevent all damage" in clause_text:
+            stack_entry["prevent_all"] = True
+        state.setdefault("replacement_prevention_stack", []).append(stack_entry)
+        events.append(
+            f"{actor} prepared effect: {normalized.op} ({kind}, priority {priority}, turns {turns_remaining})."
+        )
+        return
+
+    if normalized.op == "advance_temporary_rules":
+        events.extend(advance_temporary_rule_durations(state, actor=actor))
+        return
+
+    if normalized.op == "register_timing_rule":
+        window = str(normalized.params.get("window", TimingWindow.BEFORE_ATTACK.value))
+        state.setdefault("timing_rule_stack", []).append(
+            {
+                "owner": actor,
+                "window": window,
+                "priority": int(normalized.params.get("priority", 100)),
+                "kind": str(normalized.params.get("kind", "normal")),
+                "operation": normalized.params.get("operation", {}),
+                "target": normalized.params.get("target", "self_player"),
+                "turns_remaining": max(1, int(normalized.params.get("turns", 1))),
+            }
+        )
+        events.append(f"{actor} registered timing rule for {window}.")
         return
 
     if normalized.op in {
@@ -1245,6 +1448,64 @@ def apply_pokemon_checkup(
         target["prevent_all_damage_turns_remaining"] -= 1
         if target["prevent_all_damage_turns_remaining"] <= 0:
             target["prevent_all_damage_turns_remaining"] = 0
+
+    return events
+
+
+def advance_temporary_rule_durations(
+    state: dict[str, Any],
+    actor: str | None = None,
+) -> list[str]:
+    events: list[str] = []
+
+    remaining_continuous: list[dict[str, Any]] = []
+    for rule in state.get("continuous_rules", []):
+        owner = str(rule.get("owner", ""))
+        if actor is not None and owner and owner != actor:
+            remaining_continuous.append(rule)
+            continue
+        turns = int(rule.get("turns_remaining", 0))
+        if turns <= 0:
+            continue
+        turns -= 1
+        if turns <= 0:
+            events.append(f"Temporary continuous rule expired: {rule.get('source', 'rule')}.")
+            continue
+        rule["turns_remaining"] = turns
+        remaining_continuous.append(rule)
+    state["continuous_rules"] = remaining_continuous
+
+    remaining_stack: list[dict[str, Any]] = []
+    for rule in state.get("replacement_prevention_stack", []):
+        owner = str(rule.get("owner", ""))
+        if actor is not None and owner and owner != actor:
+            remaining_stack.append(rule)
+            continue
+        turns = int(rule.get("turns_remaining", 0))
+        if turns <= 0:
+            continue
+        turns -= 1
+        if turns <= 0:
+            events.append(f"Temporary stack rule expired: {rule.get('source', 'rule')}.")
+            continue
+        rule["turns_remaining"] = turns
+        remaining_stack.append(rule)
+    state["replacement_prevention_stack"] = remaining_stack
+
+    remaining_timing_rules: list[dict[str, Any]] = []
+    for rule in state.get("timing_rule_stack", []):
+        owner = str(rule.get("owner", ""))
+        if actor is not None and owner and owner != actor:
+            remaining_timing_rules.append(rule)
+            continue
+        turns = int(rule.get("turns_remaining", 1))
+        turns -= 1
+        if turns <= 0:
+            events.append(f"Timing rule expired: {rule.get('window', 'UNKNOWN')}.")
+            continue
+        rule["turns_remaining"] = turns
+        remaining_timing_rules.append(rule)
+    state["timing_rule_stack"] = remaining_timing_rules
 
     return events
 

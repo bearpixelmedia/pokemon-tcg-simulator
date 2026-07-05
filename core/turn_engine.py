@@ -9,7 +9,12 @@ from typing import Any
 from core.ai_policy import choose_action_heuristic, generate_legal_actions
 from core.card_blueprints import list_blueprints
 from core.effect_types import EffectProgram
-from core.effects import apply_effect_program, apply_pokemon_checkup, create_demo_state
+from core.effects import (
+    advance_temporary_rule_durations,
+    apply_effect_program,
+    apply_pokemon_checkup,
+    create_demo_state,
+)
 from core.rules_mechanics import (
     attempt_devolve,
     attempt_evolve,
@@ -149,7 +154,37 @@ def _resolve_timing_window(
 ) -> list[str]:
     event_payload = payload or {}
     state.setdefault("timing_windows", []).append({"window": window.value, "actor": actor, "payload": event_payload})
-    operations = timing_bus.emit(TimingEvent(window=window, actor=actor, payload=event_payload))
+    bus_operations = timing_bus.emit(TimingEvent(window=window, actor=actor, payload=event_payload))
+    kind_order = {"replacement": 0, "prevention": 1, "normal": 2}
+    stacked_rules = []
+    for index, rule in enumerate(state.get("timing_rule_stack", [])):
+        if str(rule.get("window", "")) != window.value:
+            continue
+        if int(rule.get("turns_remaining", 1)) <= 0:
+            continue
+        owner = str(rule.get("owner", ""))
+        target_scope = str(rule.get("target", "self_player"))
+        applies = True
+        if owner in {"p1", "p2"}:
+            if target_scope.startswith("self_"):
+                applies = owner == actor
+            elif target_scope.startswith("opponent_"):
+                applies = owner != actor
+        if not applies:
+            continue
+        operation = rule.get("operation", {})
+        if not isinstance(operation, dict):
+            continue
+        stacked_rules.append(
+            (
+                kind_order.get(str(rule.get("kind", "normal")), 99),
+                -int(rule.get("priority", 100)),
+                index,
+                operation,
+            )
+        )
+    stacked_rules.sort(key=lambda item: (item[0], item[1], item[2]))
+    operations = [item[3] for item in stacked_rules] + bus_operations
     if not operations:
         return []
     program = EffectProgram(source_text=f"timing:{window.value}", operations=operations)
@@ -272,6 +307,7 @@ def run_turn_based_simulation(
 
         turn_end_events = [f"{actor} ended turn {turn}."]
         turn_end_events.extend(_resolve_timing_window(timing_bus, state, actor, TimingWindow.TURN_END, rng, {"turn": turn}))
+        turn_end_events.extend(advance_temporary_rule_durations(state, actor=actor))
         turn_entry["phases"].append(_phase_events(TurnPhase.TURN_END, turn_end_events))
         turn_entry["hp"] = {
             "you": state["players"]["p1"]["active"]["hp"],

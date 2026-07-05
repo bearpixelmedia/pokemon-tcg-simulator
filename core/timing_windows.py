@@ -28,15 +28,47 @@ class TimingEvent:
 TimingHandler = Callable[[TimingEvent], list[EffectOperation]]
 
 
+class TimingHandlerKind(str, Enum):
+    REPLACEMENT = "replacement"
+    PREVENTION = "prevention"
+    NORMAL = "normal"
+
+
+@dataclass(frozen=True)
+class TimingHandlerRegistration:
+    handler: TimingHandler
+    priority: int = 100
+    kind: TimingHandlerKind = TimingHandlerKind.NORMAL
+
+
 class TimingBus:
     def __init__(self) -> None:
-        self._handlers: dict[TimingWindow, list[TimingHandler]] = {window: [] for window in TimingWindow}
+        self._handlers: dict[TimingWindow, list[TimingHandlerRegistration]] = {
+            window: [] for window in TimingWindow
+        }
 
-    def register(self, window: TimingWindow, handler: TimingHandler) -> None:
-        self._handlers[window].append(handler)
+    def register(
+        self,
+        window: TimingWindow,
+        handler: TimingHandler,
+        priority: int = 100,
+        kind: TimingHandlerKind = TimingHandlerKind.NORMAL,
+    ) -> None:
+        self._handlers[window].append(
+            TimingHandlerRegistration(handler=handler, priority=priority, kind=kind)
+        )
 
     def emit(self, event: TimingEvent) -> list[EffectOperation]:
+        kind_order = {
+            TimingHandlerKind.REPLACEMENT: 0,
+            TimingHandlerKind.PREVENTION: 1,
+            TimingHandlerKind.NORMAL: 2,
+        }
         operations: list[EffectOperation] = []
-        for handler in self._handlers[event.window]:
-            operations.extend(handler(event))
+        ordered_handlers = sorted(
+            self._handlers[event.window],
+            key=lambda entry: (kind_order.get(entry.kind, 99), -entry.priority),
+        )
+        for entry in ordered_handlers:
+            operations.extend(entry.handler(event))
         return operations

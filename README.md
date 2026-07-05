@@ -13,7 +13,7 @@ Complete modular engine with:
 - `core/card_blueprints.py`  
   Defines variable wording blueprints so one template can generate many card effects.
 - `core/effects.py`  
-  Applies compiled operations to a simulation state.
+  Applies compiled operations to a simulation state, including ordered replacement/prevention stack resolution and temporary-rule expiry.
 - `core/standard_coverage.py`  
   Ingests Standard-legal cards by regulation mark and reports text-template coverage.
 - `core/template_mining.py`  
@@ -33,7 +33,7 @@ Complete modular engine with:
 - `core/state_model.py`  
   Strongly typed runtime state model with legacy/demo state adapter.
 - `core/timing_windows.py`  
-  Timing window bus for deterministic trigger dispatch and ordering.
+  Timing window bus for deterministic trigger dispatch with ordered replacement/prevention/normal handler priority.
 - `core/effect_layers.py`  
   Continuous-effect layer resolver for rule stacking and modifier precedence.
 - `core/targeting.py`  

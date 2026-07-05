@@ -1,8 +1,7 @@
 import unittest
 
 from core.effect_types import EffectOperation, EffectProgram
-from core.effects import apply_effect_program
-from core.effects import create_demo_state
+from core.effects import advance_temporary_rule_durations, apply_effect_program, create_demo_state
 from core.rules_mechanics import (
     attempt_devolve,
     attempt_evolve,
@@ -274,6 +273,99 @@ class RulesMechanicsTests(unittest.TestCase):
         )
         apply_effect_program(program, state, actor="p1")
         self.assertEqual(state["players"]["p2"]["active"]["hp"], 70)
+
+    def test_replacement_then_prevention_stack_order(self) -> None:
+        state = create_demo_state()
+        program = EffectProgram(
+            source_text="stack ordering",
+            operations=[
+                EffectOperation(
+                    op="apply_temporary_rule",
+                    params={
+                        "rule": "replace_to_80",
+                        "kind": "replacement",
+                        "priority": 200,
+                        "set_amount": 80,
+                        "target": "opponent_active",
+                    },
+                ),
+                EffectOperation(
+                    op="apply_temporary_rule",
+                    params={
+                        "rule": "prevent_30",
+                        "kind": "prevention",
+                        "priority": 100,
+                        "prevent_amount": 30,
+                        "target": "opponent_active",
+                    },
+                ),
+                EffectOperation(op="deal_damage", params={"target": "opponent_active", "amount": 30}),
+            ],
+        )
+        events = apply_effect_program(program, state, actor="p1")
+        self.assertEqual(state["players"]["p2"]["active"]["hp"], 70)
+        replacement_index = next(i for i, event in enumerate(events) if "Replacement rule" in event)
+        prevention_index = next(i for i, event in enumerate(events) if "Prevention rule" in event)
+        self.assertLess(replacement_index, prevention_index)
+
+    def test_temporary_stack_rule_expires_at_turn_advance(self) -> None:
+        state = create_demo_state()
+        setup = EffectProgram(
+            source_text="one-turn prevention",
+            operations=[
+                EffectOperation(
+                    op="apply_temporary_rule",
+                    params={
+                        "rule": "one_turn_prevent",
+                        "kind": "prevention",
+                        "prevent_amount": 20,
+                        "turns": 1,
+                        "target": "opponent_active",
+                    },
+                )
+            ],
+        )
+        apply_effect_program(setup, state, actor="p1")
+        advance_temporary_rule_durations(state, actor="p1")
+        attack = EffectProgram(
+            source_text="post expiry damage",
+            operations=[EffectOperation(op="deal_damage", params={"target": "opponent_active", "amount": 30})],
+        )
+        apply_effect_program(attack, state, actor="p1")
+        self.assertEqual(state["players"]["p2"]["active"]["hp"], 90)
+
+    def test_registered_timing_rule_applies_before_attack(self) -> None:
+        state = create_demo_state()
+        register = EffectProgram(
+            source_text="register timing modifier",
+            operations=[
+                EffectOperation(
+                    op="register_timing_rule",
+                    params={
+                        "window": "BEFORE_ATTACK",
+                        "kind": "replacement",
+                        "priority": 100,
+                        "turns": 2,
+                        "operation": {
+                            "op": "apply_temporary_rule",
+                            "params": {
+                                "rule": "timed_bonus",
+                                "kind": "replacement",
+                                "set_amount": 30,
+                                "target": "opponent_active",
+                            },
+                        },
+                    },
+                )
+            ],
+        )
+        apply_effect_program(register, state, actor="p1")
+        damage = EffectProgram(
+            source_text="timed damage",
+            operations=[EffectOperation(op="deal_damage", params={"target": "opponent_active", "amount": 20})],
+        )
+        apply_effect_program(damage, state, actor="p1")
+        self.assertEqual(state["players"]["p2"]["active"]["hp"], 90)
 
 
 if __name__ == "__main__":

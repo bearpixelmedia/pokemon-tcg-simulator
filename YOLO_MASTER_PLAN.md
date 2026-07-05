@@ -181,6 +181,8 @@ Exit criteria:
 - [x] Wired full legal-action metadata into AI action selection
 - [x] Wired continuous-rule storage/layered damage modifiers into effect execution
 - [x] Wired golden regression suite into quality-gate execution
+- [x] Added replacement/prevention priority stack semantics for deterministic damage resolution
+- [x] Added turn-end expiry for temporary continuous/stack/timing rules
 
 Exit criteria:
 - No regressions in deterministic replay and text/runtime coverage guarantees.
