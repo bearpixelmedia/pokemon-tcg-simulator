@@ -41,24 +41,40 @@ def create_demo_state() -> dict[str, Any]:
             "p1": {
                 "name": "You",
                 "hand_size": 5,
+                "hand_cards": [{"id": f"p1-hand-{index+1}", "name": "Card"} for index in range(5)],
                 "hand_supporters": 1,
                 "hand_stadiums": 1,
                 "hand_tools": 1,
-                "active": create_active_pokemon(),
+                "active": create_active_pokemon(card_id="p1-active-1", card_name="P1 Active"),
+                "bench": [
+                    create_active_pokemon(card_id="p1-bench-1", card_name="P1 Bench 1"),
+                    create_active_pokemon(card_id="p1-bench-2", card_name="P1 Bench 2"),
+                ],
                 "bench_size": 2,
                 "prizes_remaining": 6,
+                "prize_cards": [{"id": f"p1-prize-{index+1}", "name": "Prize"} for index in range(6)],
+                "discard_pile": [],
+                "deck_cards": [{"id": f"p1-deck-{index+1}", "name": "Deck"} for index in range(47)],
                 "knockouts": 0,
                 "turn_flags": {},
             },
             "p2": {
                 "name": "AI",
                 "hand_size": 5,
+                "hand_cards": [{"id": f"p2-hand-{index+1}", "name": "Card"} for index in range(5)],
                 "hand_supporters": 1,
                 "hand_stadiums": 1,
                 "hand_tools": 1,
-                "active": create_active_pokemon(),
+                "active": create_active_pokemon(card_id="p2-active-1", card_name="P2 Active"),
+                "bench": [
+                    create_active_pokemon(card_id="p2-bench-1", card_name="P2 Bench 1"),
+                    create_active_pokemon(card_id="p2-bench-2", card_name="P2 Bench 2"),
+                ],
                 "bench_size": 2,
                 "prizes_remaining": 6,
+                "prize_cards": [{"id": f"p2-prize-{index+1}", "name": "Prize"} for index in range(6)],
+                "discard_pile": [],
+                "deck_cards": [{"id": f"p2-deck-{index+1}", "name": "Deck"} for index in range(47)],
                 "knockouts": 0,
                 "turn_flags": {},
             },
@@ -124,6 +140,37 @@ def _rule_key_from_clause(clause: str, fallback: str = "script_clause_rule") -> 
     if not key:
         return fallback
     return key[:96]
+
+
+def _sync_hand_cards(player: dict[str, Any], actor: str) -> None:
+    hand_cards = player.get("hand_cards")
+    if not isinstance(hand_cards, list):
+        hand_cards = []
+    hand_size = int(player.get("hand_size", len(hand_cards)))
+    while len(hand_cards) < hand_size:
+        hand_cards.append({"id": f"{actor}-hand-runtime-{len(hand_cards) + 1}", "name": "Card"})
+    if len(hand_cards) > hand_size:
+        hand_cards = hand_cards[:hand_size]
+    player["hand_cards"] = hand_cards
+    player["hand_size"] = len(hand_cards)
+
+
+def _sync_bench_slots(player: dict[str, Any], actor: str) -> None:
+    bench = player.get("bench")
+    if not isinstance(bench, list):
+        bench = []
+    bench_size = int(player.get("bench_size", len(bench)))
+    while len(bench) < bench_size:
+        bench.append(
+            create_active_pokemon(
+                card_id=f"{actor}-bench-runtime-{len(bench) + 1}",
+                card_name=f"{actor} Bench Runtime {len(bench) + 1}",
+            )
+        )
+    if len(bench) > bench_size:
+        bench = bench[:bench_size]
+    player["bench"] = bench
+    player["bench_size"] = len(bench)
 
 
 def _coerce_layer(layer: str | int | None) -> EffectLayer:
@@ -920,6 +967,7 @@ def _apply_operation(
     if normalized.op == "draw_cards":
         draw_count = int(normalized.params["count"])
         state["players"][actor]["hand_size"] += draw_count
+        _sync_hand_cards(state["players"][actor], actor)
         events.append(f"{actor} drew {draw_count} cards.")
         return
 
@@ -929,6 +977,7 @@ def _apply_operation(
         if current < target_size:
             drawn = target_size - current
             state["players"][actor]["hand_size"] = target_size
+            _sync_hand_cards(state["players"][actor], actor)
             events.append(f"{actor} drew {drawn} cards to reach hand size {target_size}.")
         else:
             events.append(f"{actor} already has at least {target_size} cards in hand.")
@@ -943,6 +992,7 @@ def _apply_operation(
     if normalized.op == "search_deck_to_hand":
         count = int(normalized.params.get("count", 1))
         state["players"][actor]["hand_size"] += count
+        _sync_hand_cards(state["players"][actor], actor)
         descriptor = normalized.params.get("descriptor", "matching")
         events.append(f"{actor} searched deck for {count} {descriptor} card(s).")
         return
@@ -950,6 +1000,7 @@ def _apply_operation(
     if normalized.op == "shuffle_hand_into_deck":
         player = state["players"][actor]
         player["hand_size"] = 0
+        player["hand_cards"] = []
         events.append(f"{actor} shuffled hand into deck.")
         return
 
@@ -958,6 +1009,7 @@ def _apply_operation(
         descriptor = normalized.params.get("descriptor", "matching")
         player = state["players"][actor]
         player["bench_size"] = player.get("bench_size", 0) + count
+        _sync_bench_slots(player, actor)
         events.append(f"{actor} benched up to {count} {descriptor} card(s) from deck.")
         return
 
@@ -1010,9 +1062,11 @@ def _apply_operation(
         return
 
     if normalized.op == "discard_random_card":
-        target_player = state["players"][_opponent(actor)]
+        opp = _opponent(actor)
+        target_player = state["players"][opp]
         discarded = min(int(normalized.params.get("count", 1)), int(target_player.get("hand_size", 0)))
         target_player["hand_size"] = max(0, int(target_player.get("hand_size", 0)) - discarded)
+        _sync_hand_cards(target_player, opp)
         events.append(f"{actor} discarded {discarded} random card(s) from opponent hand.")
         return
 
@@ -1023,24 +1077,29 @@ def _apply_operation(
             player = state["players"][actor]
             discarded = min(count, int(player.get("hand_size", 0)))
             player["hand_size"] = max(0, int(player.get("hand_size", 0)) - discarded)
+            _sync_hand_cards(player, actor)
             events.append(f"{actor} discarded {discarded} card(s) from hand.")
             return
         if target == "opponent_hand":
-            player = state["players"][_opponent(actor)]
+            opp = _opponent(actor)
+            player = state["players"][opp]
             discarded = min(count, int(player.get("hand_size", 0)))
             player["hand_size"] = max(0, int(player.get("hand_size", 0)) - discarded)
+            _sync_hand_cards(player, opp)
             events.append(f"{actor} made opponent discard {discarded} card(s) from hand.")
             return
 
     if normalized.op == "recover_from_discard_to_hand":
         count = int(normalized.params.get("count", 1))
         state["players"][actor]["hand_size"] = int(state["players"][actor].get("hand_size", 0)) + count
+        _sync_hand_cards(state["players"][actor], actor)
         events.append(f"{actor} recovered {count} card(s) from discard to hand.")
         return
 
     if normalized.op == "look_top_deck_pick":
         picked = int(normalized.params.get("pick_count", 1))
         state["players"][actor]["hand_size"] = int(state["players"][actor].get("hand_size", 0)) + picked
+        _sync_hand_cards(state["players"][actor], actor)
         events.append(f"{actor} looked at top deck cards and picked {picked}.")
         return
 
@@ -1215,6 +1274,7 @@ def _apply_operation(
         if int(slot.get("energy_attached", 0)) > 0:
             slot["energy_attached"] = int(slot.get("energy_attached", 0)) - 1
             state["players"][actor]["hand_size"] = int(state["players"][actor].get("hand_size", 0)) + 1
+            _sync_hand_cards(state["players"][actor], actor)
         events.append(f"{actor} returned an attached Energy to hand.")
         return
 

@@ -19,6 +19,7 @@ from core.effects import (
 from core.official_rules import enforce_state_invariants, set_turn_context, validate_action_against_rules
 from core.priority_stack_policy import operations_from_timing_rules
 from core.rules_mechanics import (
+    begin_turn_state_update,
     attempt_devolve,
     attempt_evolve,
     attempt_retreat,
@@ -190,6 +191,7 @@ def run_turn_based_simulation(
         actor = "p1" if turn % 2 == 1 else "p2"
         target = "p2" if actor == "p1" else "p1"
         turn_entry: dict[str, Any] = {"turn": turn, "actor": actor, "phases": []}
+        begin_turn_state_update(state, actor)
         set_turn_context(state, actor, turn)
 
         reset_turn_flags(state, actor)
@@ -284,8 +286,29 @@ def run_turn_based_simulation(
                 _, attack_events = play_stadium(state, actor)
             elif action_type == "attach_tool":
                 _, attack_events = attach_tool(state, actor)
+            elif action_type == "bench_pokemon":
+                if int(state["players"][actor].get("bench_size", 0)) >= 5:
+                    attack_events = [f"{actor} could not bench a Pokémon because Bench is full."]
+                else:
+                    state["players"][actor]["bench_size"] = int(state["players"][actor].get("bench_size", 0)) + 1
+                    state["players"][actor].setdefault("bench", []).append(
+                        {
+                            "card_id": f"{actor}-bench-new-{turn}",
+                            "card_name": "Benched Pokemon",
+                            "hp": 120,
+                            "max_hp": 120,
+                            "status": [],
+                            "energy_attached": 0,
+                            "stage": "Basic",
+                            "retreat_cost": 1,
+                            "turns_in_play": 0,
+                            "just_played_this_turn": True,
+                            "evolved_this_turn": False,
+                        }
+                    )
+                    attack_events = [f"{actor} benched a Pokémon from hand."]
             else:
-                attack_events = [f"{actor} passed the action step."]
+                attack_events = [f"{actor} action '{action_type}' is unsupported and was converted to pass."]
 
         turn_entry["phases"].append(_phase_events(TurnPhase.BEFORE_ATTACK, before_attack_events))
 

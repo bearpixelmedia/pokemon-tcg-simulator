@@ -11,6 +11,8 @@ def generate_legal_actions_full(state: dict[str, Any], actor: str) -> list[dict[
     actions: list[dict[str, Any]] = []
     player = state["players"][actor]
     active = state["players"][actor]["active"]
+    bench_count = len(player.get("bench", [])) if isinstance(player.get("bench"), list) else int(player.get("bench_size", 0))
+    statuses = set(active.get("status", []))
 
     # Attack preview legality with simple active-energy cost assumption.
     attack_cost = 1
@@ -28,7 +30,13 @@ def generate_legal_actions_full(state: dict[str, Any], actor: str) -> list[dict[
 
     # Retreat legality with target and cost checks.
     retreat_target = validate_target_selector(state, actor, "self_bench")
-    can_retreat = retreat_target.valid and int(active.get("energy_attached", 0)) >= int(active.get("retreat_cost", 1))
+    can_retreat = (
+        retreat_target.valid
+        and bench_count > 0
+        and "Asleep" not in statuses
+        and "Paralyzed" not in statuses
+        and int(active.get("energy_attached", 0)) >= int(active.get("retreat_cost", 1))
+    )
     retreat_rule_legal, retreat_rule_reason = validate_action_against_rules(state, actor, "retreat")
     actions.append(
         {
@@ -99,7 +107,7 @@ def generate_legal_actions_full(state: dict[str, Any], actor: str) -> list[dict[
         }
     )
 
-    can_bench = int(player.get("bench_size", 0)) < MAX_BENCH_SIZE
+    can_bench = bench_count < MAX_BENCH_SIZE
     actions.append(
         {
             "action_type": "bench_pokemon",

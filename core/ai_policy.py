@@ -63,6 +63,11 @@ def generate_legal_actions(state: dict[str, Any], actor: str) -> list[dict[str, 
                 "reason": str(metadata.get("reason", "legacy action check")),
             }
         )
+    existing_types = {action["action_type"] for action in enriched_actions}
+    for action in full_surface:
+        if action["action_type"] in existing_types or not action.get("legal", True):
+            continue
+        enriched_actions.append(dict(action))
     return enriched_actions
 
 
