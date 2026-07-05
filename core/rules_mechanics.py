@@ -10,6 +10,7 @@ def create_active_pokemon(
     stage: str = "Basic",
     energy_attached: int = 1,
     retreat_cost: int = 1,
+    prize_value: int = 1,
     card_id: str | None = None,
     card_name: str | None = None,
 ) -> dict[str, Any]:
@@ -24,8 +25,12 @@ def create_active_pokemon(
         "max_hp": hp,
         "status": [],
         "energy_attached": energy_attached,
+        "attached_energy_cards": [],
+        "attached_tool_cards": [],
         "stage": stage,
         "retreat_cost": retreat_cost,
+        "prize_value": max(1, prize_value),
+        "attacks": [{"name": "Default Attack", "cost": ["C"], "damage": 20}],
         "turns_in_play": 0,
         "just_played_this_turn": False,
         "evolved_this_turn": False,
@@ -50,6 +55,9 @@ def attempt_retreat(state: dict[str, Any], actor: str) -> tuple[bool, list[str]]
         return False, [f"{actor} lacks enough Energy to retreat (cost {retreat_cost})."]
 
     active["energy_attached"] = max(0, int(active.get("energy_attached", 0)) - retreat_cost)
+    attached = list(active.get("attached_energy_cards", []))
+    if retreat_cost > 0 and attached:
+        active["attached_energy_cards"] = attached[:-retreat_cost] if retreat_cost < len(attached) else []
     outgoing = player["active"]
     outgoing["status"] = []
     promoted = bench.pop(0)
@@ -107,16 +115,20 @@ def resolve_knockouts_and_prizes(state: dict[str, Any]) -> list[str]:
 
         owner_player["knockouts"] = int(owner_player.get("knockouts", 0)) + 1
         owner_player.setdefault("discard_pile", []).append(owner_active)
+        owner_player.setdefault("discard_pile", []).extend(owner_active.get("attached_energy_cards", []))
+        owner_player.setdefault("discard_pile", []).extend(owner_active.get("attached_tool_cards", []))
         events.append(f"{owner}'s Active Pokémon was Knocked Out.")
 
+        prize_value = max(1, int(owner_active.get("prize_value", 1)))
         if int(opponent_player.get("prizes_remaining", 0)) > 0:
-            if opponent_player.get("prize_cards"):
+            prizes_to_take = min(prize_value, len(opponent_player.get("prize_cards", [])))
+            for _ in range(prizes_to_take):
                 prize_card = opponent_player["prize_cards"].pop(0)
                 opponent_player.setdefault("hand_cards", []).append(prize_card)
-                opponent_player["hand_size"] = len(opponent_player["hand_cards"])
+            opponent_player["hand_size"] = len(opponent_player.get("hand_cards", []))
             opponent_player["prizes_remaining"] = len(opponent_player.get("prize_cards", []))
             events.append(
-                f"{opponent} took a Prize card ({opponent_player['prizes_remaining']} remaining)."
+                f"{opponent} took {prizes_to_take} Prize card(s) ({opponent_player['prizes_remaining']} remaining)."
             )
 
         bench = owner_player.get("bench", [])

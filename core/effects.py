@@ -26,6 +26,14 @@ _HOOK_MANIFEST_CACHE: dict[str, dict[str, Any] | None] = {}
 
 
 def create_demo_state() -> dict[str, Any]:
+    def _demo_card(actor: str, zone: str, index: int, supertype: str, is_basic: bool = False) -> dict[str, Any]:
+        return {
+            "id": f"{actor}-{zone}-{index}",
+            "name": f"{supertype.title()} {index}",
+            "supertype": supertype,
+            "is_basic": bool(is_basic),
+        }
+
     return {
         "board": {"stadium": None},
         "continuous_rules": [],
@@ -41,7 +49,13 @@ def create_demo_state() -> dict[str, Any]:
             "p1": {
                 "name": "You",
                 "hand_size": 5,
-                "hand_cards": [{"id": f"p1-hand-{index+1}", "name": "Card"} for index in range(5)],
+                "hand_cards": [
+                    _demo_card("p1", "hand", 1, "pokemon", is_basic=True),
+                    _demo_card("p1", "hand", 2, "pokemon", is_basic=True),
+                    _demo_card("p1", "hand", 3, "trainer"),
+                    _demo_card("p1", "hand", 4, "energy"),
+                    _demo_card("p1", "hand", 5, "trainer"),
+                ],
                 "hand_supporters": 1,
                 "hand_stadiums": 1,
                 "hand_tools": 1,
@@ -52,16 +66,31 @@ def create_demo_state() -> dict[str, Any]:
                 ],
                 "bench_size": 2,
                 "prizes_remaining": 6,
-                "prize_cards": [{"id": f"p1-prize-{index+1}", "name": "Prize"} for index in range(6)],
+                "prize_cards": [_demo_card("p1", "prize", index + 1, "prize") for index in range(6)],
                 "discard_pile": [],
-                "deck_cards": [{"id": f"p1-deck-{index+1}", "name": "Deck"} for index in range(47)],
+                "deck_cards": [
+                    _demo_card(
+                        "p1",
+                        "deck",
+                        index + 1,
+                        "pokemon" if index < 20 else ("energy" if index < 31 else "trainer"),
+                        is_basic=index < 12,
+                    )
+                    for index in range(43)
+                ],
                 "knockouts": 0,
                 "turn_flags": {},
             },
             "p2": {
                 "name": "AI",
                 "hand_size": 5,
-                "hand_cards": [{"id": f"p2-hand-{index+1}", "name": "Card"} for index in range(5)],
+                "hand_cards": [
+                    _demo_card("p2", "hand", 1, "pokemon", is_basic=True),
+                    _demo_card("p2", "hand", 2, "pokemon", is_basic=True),
+                    _demo_card("p2", "hand", 3, "trainer"),
+                    _demo_card("p2", "hand", 4, "energy"),
+                    _demo_card("p2", "hand", 5, "trainer"),
+                ],
                 "hand_supporters": 1,
                 "hand_stadiums": 1,
                 "hand_tools": 1,
@@ -72,9 +101,18 @@ def create_demo_state() -> dict[str, Any]:
                 ],
                 "bench_size": 2,
                 "prizes_remaining": 6,
-                "prize_cards": [{"id": f"p2-prize-{index+1}", "name": "Prize"} for index in range(6)],
+                "prize_cards": [_demo_card("p2", "prize", index + 1, "prize") for index in range(6)],
                 "discard_pile": [],
-                "deck_cards": [{"id": f"p2-deck-{index+1}", "name": "Deck"} for index in range(47)],
+                "deck_cards": [
+                    _demo_card(
+                        "p2",
+                        "deck",
+                        index + 1,
+                        "pokemon" if index < 20 else ("energy" if index < 31 else "trainer"),
+                        is_basic=index < 12,
+                    )
+                    for index in range(43)
+                ],
                 "knockouts": 0,
                 "turn_flags": {},
             },

@@ -57,3 +57,14 @@ def pay_cost(state: dict[str, Any], actor: str, requirements: dict[str, int]) ->
         return CostResult(False, tx.events)
     tx.events.append("Cost payment succeeded.")
     return CostResult(True, tx.events)
+
+
+def can_pay_attack_cost(active: dict[str, Any], attack: dict[str, Any]) -> tuple[bool, str]:
+    cost_symbols = attack.get("cost", [])
+    if not isinstance(cost_symbols, list):
+        return False, "attack cost is malformed"
+    required = len(cost_symbols)
+    attached = int(active.get("energy_attached", 0))
+    if attached < required:
+        return False, f"requires {required} energy, has {attached}"
+    return True, "attack cost can be paid"
