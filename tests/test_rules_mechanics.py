@@ -84,6 +84,21 @@ class RulesMechanicsTests(unittest.TestCase):
         apply_effect_program(program, state, actor="p1")
         self.assertEqual(state["players"]["p2"]["active"]["hp"], 60)
 
+    def test_damage_per_prize_taken_operation(self) -> None:
+        state = create_demo_state()
+        state["players"]["p2"]["prizes_remaining"] = 3
+        program = EffectProgram(
+            source_text="prize scaling",
+            operations=[
+                EffectOperation(
+                    op="damage_per_prize_taken",
+                    params={"target": "opponent_active", "amount_per_prize": 20},
+                )
+            ],
+        )
+        apply_effect_program(program, state, actor="p1")
+        self.assertEqual(state["players"]["p2"]["active"]["hp"], 60)
+
 
 if __name__ == "__main__":
     unittest.main()

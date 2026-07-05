@@ -129,6 +129,54 @@ class TextCompilerTests(unittest.TestCase):
         self.assertTrue(program.is_fully_resolved)
         self.assertEqual(program.operations[0].op, "apply_temporary_rule")
 
+    def test_once_during_turn_attach_energy_resolves(self) -> None:
+        text = "Once during your turn, you may attach a Basic {G} Energy card from your hand to this Pokémon."
+        program = compile_effect_text(text)
+        self.assertTrue(program.is_fully_resolved)
+        self.assertEqual(program.operations[0].op, "triggered_effect")
+
+    def test_damage_per_prize_taken_resolves(self) -> None:
+        text = "This attack does 50 more damage for each Prize card your opponent has taken."
+        program = compile_effect_text(text)
+        self.assertTrue(program.is_fully_resolved)
+        self.assertEqual(program.operations[0].op, "damage_per_prize_taken")
+
+    def test_search_evolution_from_deck_resolves(self) -> None:
+        text = "Search your deck for a card that evolves from this Pokémon and put it onto this Pokémon to evolve it. Then, shuffle your deck."
+        program = compile_effect_text(text)
+        self.assertTrue(program.is_fully_resolved)
+        self.assertEqual(program.operations[0].op, "evolve_from_deck")
+
+    def test_reveal_and_shuffle_random_hand_card_resolves(self) -> None:
+        text = "Choose a random card from your opponent's hand. Your opponent reveals that card and shuffles it into their deck."
+        program = compile_effect_text(text)
+        self.assertTrue(program.is_fully_resolved)
+        self.assertEqual(len(program.operations), 2)
+
+    def test_tool_card_rule_text_resolves(self) -> None:
+        text = "Play this card as if it were a 60-HP Basic {C} Pokémon. This card can't be affected by any Special Conditions and can't retreat. At any time during your turn, you may discard this card from play."
+        program = compile_effect_text(text)
+        self.assertTrue(program.is_fully_resolved)
+        self.assertEqual(len(program.operations), 3)
+
+    def test_prevent_damage_from_basic_pokemon_resolves(self) -> None:
+        text = "During your opponent's next turn, prevent all damage done to this Pokémon by attacks from Basic Pokémon."
+        program = compile_effect_text(text)
+        self.assertTrue(program.is_fully_resolved)
+        self.assertEqual(program.operations[0].op, "apply_temporary_rule")
+
+    def test_discard_top_n_cards_resolves(self) -> None:
+        text = "Discard the top 2 cards of your opponent's deck."
+        program = compile_effect_text(text)
+        self.assertTrue(program.is_fully_resolved)
+        self.assertEqual(program.operations[0].op, "mill_top_deck")
+
+    def test_conditional_discard_all_energy_combo_resolves(self) -> None:
+        text = "If your opponent's Active Pokémon is an Evolution Pokémon, this attack does 140 more damage, and discard all Energy from this Pokémon."
+        program = compile_effect_text(text)
+        self.assertTrue(program.is_fully_resolved)
+        self.assertEqual(program.operations[0].op, "conditional_effect")
+
 
 if __name__ == "__main__":
     unittest.main()

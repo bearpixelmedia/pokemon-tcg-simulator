@@ -154,6 +154,12 @@ def _apply_operation(
             events.append(f"{actor} already has at least {target_size} cards in hand.")
         return
 
+    if normalized.op == "triggered_effect":
+        for nested in normalized.params.get("operations", []):
+            _apply_operation(nested, state, actor, rng, events)
+        events.append(f"{actor} resolved triggered effect ({normalized.params.get('trigger')}).")
+        return
+
     if normalized.op == "search_deck_to_hand":
         count = int(normalized.params.get("count", 1))
         state["players"][actor]["hand_size"] += count
@@ -188,6 +194,7 @@ def _apply_operation(
         else:
             discarded = min(slot.get("energy_attached", 0), count)
             slot["energy_attached"] = max(0, slot.get("energy_attached", 0) - discarded)
+        state["players"][actor]["active"]["last_discarded_energy_count"] = int(discarded)
         events.append(f"{actor} discarded {discarded} Energy from {normalized.params['target']}.")
         return
 
@@ -210,7 +217,8 @@ def _apply_operation(
     if normalized.op == "move_energy":
         slot = state["players"][actor]["active"]
         available = int(slot.get("energy_attached", 0))
-        count = min(int(normalized.params.get("count", 1)), available)
+        requested = int(normalized.params.get("count", 1))
+        count = available if requested < 0 else min(requested, available)
         slot["energy_attached"] = max(0, available - count)
         events.append(f"{actor} moved {count} Energy to the Bench.")
         return
@@ -221,6 +229,16 @@ def _apply_operation(
         target_player["hand_size"] = max(0, int(target_player.get("hand_size", 0)) - discarded)
         events.append(f"{actor} discarded {discarded} random card(s) from opponent hand.")
         return
+
+    if normalized.op == "discard_cards":
+        target = normalized.params.get("target", "self_hand")
+        count = int(normalized.params.get("count", 1))
+        if target == "self_hand":
+            player = state["players"][actor]
+            discarded = min(count, int(player.get("hand_size", 0)))
+            player["hand_size"] = max(0, int(player.get("hand_size", 0)) - discarded)
+            events.append(f"{actor} discarded {discarded} card(s) from hand.")
+            return
 
     if normalized.op == "mill_top_deck":
         events.append(f"{actor} discarded top card(s) from opponent deck.")
@@ -239,6 +257,146 @@ def _apply_operation(
         events.append(f"{actor} dealt {total_damage} damage based on self damage counters.")
         return
 
+    if normalized.op == "damage_per_discarded_energy":
+        amount = int(normalized.params.get("amount_per_energy", 0))
+        discarded = int(state["players"][actor]["active"].get("last_discarded_energy_count", 0))
+        total_damage = amount * discarded
+        slot = state["players"][_opponent(actor)]["active"]
+        slot["hp"] = max(0, int(slot.get("hp", 0)) - total_damage)
+        events.append(f"{actor} dealt {total_damage} damage based on discarded Energy.")
+        return
+
+    if normalized.op == "damage_per_benched":
+        amount = int(normalized.params.get("amount_per_bench", 0))
+        scope = normalized.params.get("scope", "self")
+        if scope == "both":
+            count = int(state["players"][actor].get("bench_size", 0)) + int(
+                state["players"][_opponent(actor)].get("bench_size", 0)
+            )
+        else:
+            count = int(state["players"][actor].get("bench_size", 0))
+        total_damage = amount * count
+        slot = state["players"][_opponent(actor)]["active"]
+        slot["hp"] = max(0, int(slot.get("hp", 0)) - total_damage)
+        events.append(f"{actor} dealt {total_damage} damage based on Benched Pokémon count.")
+        return
+
+    if normalized.op == "damage_per_attached_energy":
+        amount = int(normalized.params.get("amount_per_energy", 0))
+        target = normalized.params.get("target", "self_active")
+        count = 0
+        if target == "self_active":
+            count = int(state["players"][actor]["active"].get("energy_attached", 0))
+        elif target == "opponent_active":
+            count = int(state["players"][_opponent(actor)]["active"].get("energy_attached", 0))
+        elif target == "both_active":
+            count = int(state["players"][actor]["active"].get("energy_attached", 0)) + int(
+                state["players"][_opponent(actor)]["active"].get("energy_attached", 0)
+            )
+        elif target == "all_self_pokemon":
+            count = int(state["players"][actor]["active"].get("energy_attached", 0))
+        total_damage = amount * count
+        slot = state["players"][_opponent(actor)]["active"]
+        slot["hp"] = max(0, int(slot.get("hp", 0)) - total_damage)
+        events.append(f"{actor} dealt {total_damage} damage based on attached Energy.")
+        return
+
+    if normalized.op == "damage_per_target_damage_counter":
+        target = state["players"][_opponent(actor)]["active"]
+        counters = max(0, (int(target.get("max_hp", 0)) - int(target.get("hp", 0))) // 10)
+        total_damage = counters * int(normalized.params.get("amount_per_counter", 0))
+        target["hp"] = max(0, int(target.get("hp", 0)) - total_damage)
+        events.append(f"{actor} dealt {total_damage} damage based on target damage counters.")
+        return
+
+    if normalized.op == "damage_per_prize_taken":
+        amount = int(normalized.params.get("amount_per_prize", 0))
+        taken = 6 - int(state["players"][_opponent(actor)].get("prizes_remaining", 6))
+        total_damage = max(0, taken) * amount
+        slot = state["players"][_opponent(actor)]["active"]
+        slot["hp"] = max(0, int(slot.get("hp", 0)) - total_damage)
+        events.append(f"{actor} dealt {total_damage} damage based on prizes taken.")
+        return
+
+    if normalized.op == "flip_until_tails_damage_bonus":
+        amount = int(normalized.params.get("amount_per_heads", 0))
+        heads = 0
+        while True:
+            result = rng.choice(["heads", "tails"])
+            if result == "heads":
+                heads += 1
+                continue
+            break
+        total_damage = heads * amount
+        target = state["players"][_opponent(actor)]["active"]
+        target["hp"] = max(0, int(target.get("hp", 0)) - total_damage)
+        events.append(f"{actor} flipped {heads} heads before tails for {total_damage} bonus damage.")
+        return
+
+    if normalized.op == "attach_energy_per_benched_pokemon":
+        bench = int(state["players"][actor].get("bench_size", 0))
+        events.append(f"{actor} attached Energy from deck to up to {bench} Benched Pokémon.")
+        return
+
+    if normalized.op == "reveal_hand":
+        events.append(f"{actor} revealed opponent hand.")
+        return
+
+    if normalized.op == "discard_stadium":
+        state.setdefault("board", {})["stadium"] = None
+        events.append(f"{actor} discarded the Stadium in play.")
+        return
+
+    if normalized.op == "evolve_from_deck":
+        events.append(f"{actor} evolved using a card searched from deck.")
+        return
+
+    if normalized.op == "heal_equal_last_damage_dealt":
+        events.append(f"{actor} healed equal to previously dealt damage.")
+        return
+
+    if normalized.op == "place_damage_counters":
+        counters = int(normalized.params.get("count", 0))
+        events.append(f"{actor} placed {counters} damage counters on target Pokémon.")
+        return
+
+    if normalized.op == "shuffle_attached_energy_into_deck":
+        count = int(normalized.params.get("count", 0))
+        slot = state["players"][actor]["active"]
+        moved = min(count, int(slot.get("energy_attached", 0)))
+        slot["energy_attached"] = max(0, int(slot.get("energy_attached", 0)) - moved)
+        events.append(f"{actor} shuffled {moved} attached Energy into deck.")
+        return
+
+    if normalized.op == "damage_per_tool_attached":
+        amount = int(normalized.params.get("amount_per_tool", 0))
+        tools = 1 if state["players"][actor]["active"].get("tool_attached") else 0
+        total_damage = tools * amount
+        slot = state["players"][_opponent(actor)]["active"]
+        slot["hp"] = max(0, int(slot.get("hp", 0)) - total_damage)
+        events.append(f"{actor} dealt {total_damage} damage based on attached Tools.")
+        return
+
+    if normalized.op == "choose_random_opponent_hand_card":
+        events.append(f"{actor} chose a random card from opponent hand.")
+        return
+
+    if normalized.op in {"shuffle_selected_opponent_hand_card_into_deck", "shuffle_random_opponent_hand_card_into_deck"}:
+        events.append(f"{actor} shuffled a random opponent hand card into deck.")
+        return
+
+    if normalized.op == "return_attached_energy_to_hand":
+        slot = state["players"][actor]["active"]
+        if int(slot.get("energy_attached", 0)) > 0:
+            slot["energy_attached"] = int(slot.get("energy_attached", 0)) - 1
+            state["players"][actor]["hand_size"] = int(state["players"][actor].get("hand_size", 0)) + 1
+        events.append(f"{actor} returned an attached Energy to hand.")
+        return
+
+    if normalized.op == "scoop_up_self":
+        events.append(f"{actor} scooped up their Active Pokémon and attached cards.")
+        return
+
     if normalized.op == "flip_coins_for_damage":
         coin_count = int(normalized.params.get("coin_count", 0))
         damage_per_heads = int(normalized.params.get("damage_per_heads", 0))
@@ -255,9 +413,11 @@ def _apply_operation(
     if normalized.op in {
         "ignore_weakness_resistance",
         "ignore_defending_effects",
+        "ignore_weakness_resistance_and_effects_on_targets",
         "ignore_resistance",
         "apply_temporary_rule",
         "select_opponent_bench",
+        "choose_attack",
         "annotation_noop",
     }:
         events.append(f"{actor} prepared effect: {normalized.op}.")
