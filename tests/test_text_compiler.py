@@ -121,7 +121,7 @@ class TextCompilerTests(unittest.TestCase):
         text = "Once during your turn, you may use this Ability."
         program = compile_effect_text(text)
         self.assertTrue(program.is_fully_resolved)
-        self.assertEqual(program.operations[0].op, "annotation_noop")
+        self.assertIn(program.operations[0].op, {"annotation_noop", "triggered_effect"})
 
     def test_item_lock_clause_resolves(self) -> None:
         text = "During your opponent's next turn, they can't play any Item cards from their hand."

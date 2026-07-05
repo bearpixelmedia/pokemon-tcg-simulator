@@ -104,6 +104,16 @@ def _script_hook_builder(hook_id: str, group_names: tuple[str, ...] = ()) -> Cal
     return _builder
 
 
+def _looks_like_tcg_clause(clause: str) -> bool:
+    return bool(
+        re.search(
+            r"\b(?:pokemon|pokémon|energy|attack|ability|bench|active|prize|deck|discard|special condition|retreat|stadium|supporter|tool)\b",
+            clause,
+            flags=re.IGNORECASE,
+        )
+    )
+
+
 def _damage_to_active(match: re.Match[str]) -> list[EffectOperation]:
     return [
         EffectOperation(
@@ -4971,6 +4981,24 @@ CLAUSE_TEMPLATES: list[TextTemplate] = [
         builder=_parenthetical_noop,
     ),
     TextTemplate(
+        name="parenthetical_existing_effects_not_removed_damage_not_effect",
+        description="Parenthetical reminder that existing effects are not removed and damage is not an effect.",
+        pattern=re.compile(
+            r"^\(Existing effects are not removed\. Damage is not an effect\.\)$",
+            re.IGNORECASE,
+        ),
+        builder=_parenthetical_noop,
+    ),
+    TextTemplate(
+        name="parenthetical_weakness_amount_doesnt_change",
+        description="Parenthetical reminder that weakness amount doesn't change.",
+        pattern=re.compile(
+            r"^\(The amount of Weakness doesn't change\.\)$",
+            re.IGNORECASE,
+        ),
+        builder=_parenthetical_noop,
+    ),
+    TextTemplate(
         name="discard_top_n_cards_of_self_deck",
         description="Discard top N cards of your deck.",
         pattern=re.compile(
@@ -5158,6 +5186,57 @@ CLAUSE_TEMPLATES: list[TextTemplate] = [
             re.IGNORECASE,
         ),
         builder=_script_hook_builder("heal-fixed-from-each-self-bench", ("amount",)),
+    ),
+    TextTemplate(
+        name="damage_not_affected_by_weakness_or_resistance",
+        description="Damage is not affected by weakness or resistance.",
+        pattern=re.compile(
+            r"^This damage isn't affected by Weakness or Resistance\.$",
+            re.IGNORECASE,
+        ),
+        builder=_ignore_weakness_resistance_and_effects,
+    ),
+    TextTemplate(
+        name="each_named_ex_in_play_gets_bonus_hp",
+        description="Each named ex in play gets bonus HP.",
+        pattern=re.compile(
+            rf"^Each .+? ex in play \(both yours and your opponent's\) gets \+(?P<hp>\d+) HP\.$",
+            re.IGNORECASE,
+        ),
+        builder=_script_hook_builder("each-named-ex-in-play-gets-bonus-hp", ("hp",)),
+    ),
+    TextTemplate(
+        name="must_play_n_named_cards_at_once",
+        description="Must play N named cards at once.",
+        pattern=re.compile(
+            r"^You must play (?P<count>\d+) .+? cards at once\.$",
+            re.IGNORECASE,
+        ),
+        builder=_script_hook_builder("must-play-n-named-cards-at-once", ("count",)),
+    ),
+    TextTemplate(
+        name="your_turn_ends",
+        description="Your turn ends.",
+        pattern=re.compile(r"^Your turn ends\.$", re.IGNORECASE),
+        builder=_script_hook_builder("your-turn-ends"),
+    ),
+    TextTemplate(
+        name="then_draw_per_opponent_hand_cards",
+        description="Then draw a card for each card in your opponent's hand.",
+        pattern=re.compile(
+            r"^Then, draw a card for each card in your opponent's hand\.$",
+            re.IGNORECASE,
+        ),
+        builder=_script_hook_builder("then-draw-per-opponent-hand-cards"),
+    ),
+    TextTemplate(
+        name="then_if_have_n_or_more_cards_draw_m_more",
+        description="Then, if you have N or more cards in hand, draw M more cards.",
+        pattern=re.compile(
+            r"^Then, if you have (?P<threshold>\d+) or more cards in your hand, draw (?P<count>\d+) more cards\.$",
+            re.IGNORECASE,
+        ),
+        builder=_script_hook_builder("then-if-have-n-or-more-cards-draw-m-more", ("threshold", "count")),
     ),
     TextTemplate(
         name="then_discard_named_cards_shuffle_others_back",
@@ -5742,8 +5821,16 @@ def _split_sentences(text: str) -> list[str]:
     text = text.replace("; ", ". ")
     # Keep abbreviations like "etc." from being split into separate clauses.
     text = re.sub(r"\betc\.", "etc<dot>", text, flags=re.IGNORECASE)
+    text = text.replace(
+        "(Existing effects are not removed. Damage is not an effect.)",
+        "(Existing effects are not removed<dot> Damage is not an effect.)",
+    )
     sentences = re.split(r"(?<=[.!?])\s+", text)
-    cleaned_segments = [segment.strip().replace("etc<dot>", "etc.") for segment in sentences if segment.strip()]
+    cleaned_segments = [
+        segment.strip().replace("etc<dot>", "etc.").replace("removed<dot>", "removed.")
+        for segment in sentences
+        if segment.strip()
+    ]
     return [segment for segment in cleaned_segments if segment.strip(". ")]
 
 
@@ -5992,6 +6079,9 @@ def _compile_clause(clause: str) -> tuple[list[EffectOperation], str | None]:
 
     if deferred_script_fallback is not None:
         return deferred_script_fallback
+
+    if _looks_like_tcg_clause(clause):
+        return _script_hook_from_clause("generic_tcg_clause", clause)
 
     return [], None
 
