@@ -40,6 +40,8 @@ Complete modular engine with:
   Centralized replacement/prevention priority policy and timing-rule ordering helpers used across runtime modules.
 - `core/official_rules.py`  
   Official-rule baseline policy for setup, first-turn restrictions, and invariant enforcement.
+- `core/hook_manifest.py`  
+  Script-hook manifest builder/loader used by strict runtime fidelity checks.
 - `core/targeting.py`  
   Target legality helpers for selector/count validation.
 - `core/cost_engine.py`  
@@ -73,6 +75,13 @@ python3 app.py
 
 Then open http://127.0.0.1:5000
 
+## Strict-fidelity hook manifest
+```bash
+python3 scripts/build_hook_manifest.py --marks H I J
+```
+This writes `artifacts/fidelity/hook_manifest_latest.json`, used by strict
+script-hook runtime validation.
+
 ## API endpoints
 
 - `POST /run_sim` -> run AI vs AI demo simulation
@@ -89,6 +98,7 @@ Then open http://127.0.0.1:5000
 - `POST /legality/snapshot` -> build legality snapshot with release-date waiting rule
 - `POST /quality/gates` -> run quality gates and optional baseline update
 - `POST /data/pipeline/health` -> run ingest reliability and schema drift checks
+- `POST /fidelity/audit` -> run strict script-hook registration audit against hook manifest
 
 ## YOLO run artifacts
 

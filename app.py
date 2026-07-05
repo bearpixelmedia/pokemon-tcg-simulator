@@ -11,6 +11,7 @@ from sim.game import (
     build_blueprint_card,
     build_legality_snapshot,
     run_data_pipeline_health,
+    run_fidelity_audit,
     run_batch_simulations,
     run_full_yolo_pass,
     run_quality_gate_checks,
@@ -294,6 +295,29 @@ def data_pipeline_health():
             marks=marks_tuple,
             limit_cards=limit_cards,
             write_snapshot=write_snapshot,
+        )
+    )
+
+
+@app.route('/fidelity/audit', methods=['POST'])
+def fidelity_audit():
+    payload = request.get_json(silent=True) or {}
+    limit_cards = payload.get("limit_cards", 200)
+    marks = payload.get("marks", ["H", "I", "J"])
+    manifest_path = payload.get("manifest_path", "artifacts/fidelity/hook_manifest_latest.json")
+
+    if limit_cards is not None:
+        try:
+            limit_cards = int(limit_cards)
+        except (TypeError, ValueError):
+            return jsonify({"error": "limit_cards must be an integer or null."}), 400
+
+    marks_tuple = tuple(str(mark).upper() for mark in marks)
+    return jsonify(
+        run_fidelity_audit(
+            marks=marks_tuple,
+            limit_cards=limit_cards,
+            manifest_path=str(manifest_path),
         )
     )
 

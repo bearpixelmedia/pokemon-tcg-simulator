@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from core.fidelity_audit import run_strict_fidelity_audit
 from core.golden_regression import run_golden_suite
 from core.legality_snapshot import build_standard_legality_snapshot
 from core.standard_coverage import run_standard_coverage_analysis
@@ -72,6 +73,7 @@ def run_quality_gates(
     marks: tuple[str, ...] = ("H", "I", "J"),
     baseline_path: str | Path = DEFAULT_BASELINE_PATH,
     golden_suite_path: str | Path | None = DEFAULT_GOLDEN_SUITE_PATH,
+    fidelity_manifest_path: str | Path = "artifacts/fidelity/hook_manifest_latest.json",
     min_replay_checks: int = 3,
     update_baseline: bool = False,
     force_refresh: bool = False,
@@ -90,6 +92,14 @@ def run_quality_gates(
 
     replay_results = [verify_seed_replay(turn_limit=8, seed=seed) for seed in (101, 202, 303)[:min_replay_checks]]
     replay_pass = all(result["deterministic"] for result in replay_results)
+    fidelity_report = run_strict_fidelity_audit(
+        marks=marks,
+        limit_cards=coverage_limit_cards,
+        manifest_path=str(fidelity_manifest_path),
+    )
+    fidelity_pass = float(
+        fidelity_report.get("script_hook_registration", {}).get("percent", 0.0)
+    ) >= 100.0
 
     golden_report: dict[str, Any] | None = None
     golden_pass = True
@@ -126,12 +136,13 @@ def run_quality_gates(
             },
         )
 
-    quality_pass = bool(replay_pass and golden_pass and not regression)
+    quality_pass = bool(replay_pass and golden_pass and fidelity_pass and not regression)
     payload = {
         "quality_pass": quality_pass,
         "coverage": coverage.get("summary", {}),
         "legality": legality.get("summary", {}),
         "replay_checks": replay_results,
+        "strict_fidelity": fidelity_report,
         "golden_regression": golden_report,
         "baseline": {
             "path": str(baseline_file),

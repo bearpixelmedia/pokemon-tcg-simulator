@@ -7,6 +7,11 @@ from typing import Any
 from core.cost_engine import pay_cost
 from core.effect_layers import ContinuousRule, ContinuousRuleEngine, EffectLayer
 from core.effect_types import EffectOperation, EffectProgram
+from core.hook_manifest import (
+    DEFAULT_HOOK_MANIFEST_PATH,
+    is_registered_hook,
+    load_hook_manifest,
+)
 from core.priority_stack_policy import (
     infer_stack_kind,
     operations_from_timing_rules,
@@ -17,6 +22,7 @@ from core.rules_mechanics import create_active_pokemon
 from core.targeting import validate_target_selector
 from core.timing_windows import TimingBus, TimingEvent, TimingWindow
 _ROTATING_STATUSES = {"Asleep", "Confused", "Paralyzed"}
+_HOOK_MANIFEST_CACHE: dict[str, dict[str, Any] | None] = {}
 
 
 def create_demo_state() -> dict[str, Any]:
@@ -26,6 +32,11 @@ def create_demo_state() -> dict[str, Any]:
         "replacement_prevention_stack": [],
         "timing_rule_stack": [],
         "timing_windows": [],
+        "fidelity_contract": {
+            "strict_script_hooks": True,
+            "allow_manifested_fallbacks": True,
+            "manifest_path": str(DEFAULT_HOOK_MANIFEST_PATH),
+        },
         "players": {
             "p1": {
                 "name": "You",
@@ -126,6 +137,24 @@ def _coerce_layer(layer: str | int | None) -> EffectLayer:
         if normalized in EffectLayer.__members__:
             return EffectLayer[normalized]
     return EffectLayer.MISC
+
+
+def _strict_script_hook_mode(state: dict[str, Any]) -> bool:
+    contract = state.get("fidelity_contract", {})
+    return bool(contract.get("strict_script_hooks", False))
+
+
+def _allow_manifested_fallbacks(state: dict[str, Any]) -> bool:
+    contract = state.get("fidelity_contract", {})
+    return bool(contract.get("allow_manifested_fallbacks", True))
+
+
+def _load_manifest_for_state(state: dict[str, Any]) -> dict[str, Any] | None:
+    contract = state.get("fidelity_contract", {})
+    path = str(contract.get("manifest_path", DEFAULT_HOOK_MANIFEST_PATH))
+    if path not in _HOOK_MANIFEST_CACHE:
+        _HOOK_MANIFEST_CACHE[path] = load_hook_manifest(path)
+    return _HOOK_MANIFEST_CACHE[path]
 
 
 def _resolve_layered_damage(state: dict[str, Any], base_amount: int) -> int:
@@ -759,25 +788,38 @@ def _apply_script_hook_inference(
             )
             return True
 
-    # Final safety net: treat any remaining scripted clause as an explicit
-    # temporary-rule effect so all hooks are handled deterministically.
-    _apply_operation(
-        EffectOperation(
-            op="apply_temporary_rule",
-            params={
-                "target": "self_player",
-                "rule": _rule_key_from_clause(clause, fallback=f"script_{hook_id}"),
-                "hook_id": hook_id,
-                "clause": clause,
-            },
-        ),
-        state,
-        actor,
-        rng,
-        events,
-    )
-    events.append(f"{actor} resolved scripted hook via generic passthrough: {hook_id}.")
-    return True
+    manifest = _load_manifest_for_state(state)
+    registered = is_registered_hook(hook_id, clause, manifest)
+
+    if _strict_script_hook_mode(state):
+        if not _allow_manifested_fallbacks(state):
+            events.append(f"{actor} strict-fidelity violation: unhandled script hook {hook_id}.")
+            return False
+        if not registered:
+            events.append(f"{actor} strict-fidelity violation: unregistered script hook {hook_id}.")
+            return False
+
+    if registered or not _strict_script_hook_mode(state):
+        _apply_operation(
+            EffectOperation(
+                op="apply_temporary_rule",
+                params={
+                    "target": "self_player",
+                    "rule": _rule_key_from_clause(clause, fallback=f"script_{hook_id}"),
+                    "hook_id": hook_id,
+                    "clause": clause,
+                    "kind": "normal",
+                },
+            ),
+            state,
+            actor,
+            rng,
+            events,
+        )
+        events.append(f"{actor} resolved scripted hook via manifest-backed fallback: {hook_id}.")
+        return True
+
+    return False
 
 
 def apply_effect_program(
@@ -1305,6 +1347,8 @@ def _apply_operation(
             return
         if _apply_script_hook_inference(normalized, state, actor, rng, events):
             return
+        if _strict_script_hook_mode(state):
+            raise RuntimeError(f"Strict fidelity violation: unresolved script hook '{hook_id}'.")
         events.append(f"{actor} queued scripted hook: {hook_id}.")
         return
 
@@ -1315,6 +1359,8 @@ def _apply_operation(
             _apply_operation(branch_operation, state, actor, rng, events)
         return
 
+    if _strict_script_hook_mode(state):
+        raise RuntimeError(f"Strict fidelity violation: unsupported operation '{normalized.op}'.")
     events.append(f"{actor} has unsupported operation: {normalized.op}")
 
 
