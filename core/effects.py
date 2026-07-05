@@ -245,6 +245,12 @@ def _apply_operation(
             player["hand_size"] = max(0, int(player.get("hand_size", 0)) - discarded)
             events.append(f"{actor} discarded {discarded} card(s) from hand.")
             return
+        if target == "opponent_hand":
+            player = state["players"][_opponent(actor)]
+            discarded = min(count, int(player.get("hand_size", 0)))
+            player["hand_size"] = max(0, int(player.get("hand_size", 0)) - discarded)
+            events.append(f"{actor} made opponent discard {discarded} card(s) from hand.")
+            return
 
     if normalized.op == "recover_from_discard_to_hand":
         count = int(normalized.params.get("count", 1))
@@ -291,6 +297,8 @@ def _apply_operation(
             count = int(state["players"][actor].get("bench_size", 0)) + int(
                 state["players"][_opponent(actor)].get("bench_size", 0)
             )
+        elif scope == "opponent":
+            count = int(state["players"][_opponent(actor)].get("bench_size", 0))
         else:
             count = int(state["players"][actor].get("bench_size", 0))
         total_damage = amount * count

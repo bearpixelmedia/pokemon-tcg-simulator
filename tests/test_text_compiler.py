@@ -194,6 +194,24 @@ class TextCompilerTests(unittest.TestCase):
         self.assertTrue(program.is_fully_resolved)
         self.assertEqual(len(program.operations), 2)
 
+    def test_as_long_as_attached_provides_energy_resolves(self) -> None:
+        text = "As long as this card is attached to a Pokémon, it provides {C} Energy."
+        program = compile_effect_text(text)
+        self.assertTrue(program.is_fully_resolved)
+        self.assertEqual(program.operations[0].op, "apply_temporary_rule")
+
+    def test_opponent_discards_card_from_hand_resolves(self) -> None:
+        text = "Your opponent discards a card from their hand."
+        program = compile_effect_text(text)
+        self.assertTrue(program.is_fully_resolved)
+        self.assertEqual(program.operations[0].op, "discard_cards")
+
+    def test_status_burned_and_confused_resolves(self) -> None:
+        text = "Your opponent's Active Pokémon is now Burned and Confused."
+        program = compile_effect_text(text)
+        self.assertTrue(program.is_fully_resolved)
+        self.assertEqual(len(program.operations), 2)
+
 
 if __name__ == "__main__":
     unittest.main()
