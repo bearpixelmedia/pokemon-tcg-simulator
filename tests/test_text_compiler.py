@@ -233,6 +233,24 @@ class TextCompilerTests(unittest.TestCase):
         self.assertTrue(program.is_fully_resolved)
         self.assertEqual(program.operations[0].op, "script_hook")
 
+    def test_rule_box_parenthetical_resolves(self) -> None:
+        text = "(Pokémon ex, Pokémon V, etc. have Rule Boxes.)"
+        program = compile_effect_text(text)
+        self.assertTrue(program.is_fully_resolved)
+        self.assertEqual(program.operations[0].op, "annotation_noop")
+
+    def test_during_next_turn_cannot_retreat_resolves(self) -> None:
+        text = "During your next turn, this Pokémon can't retreat."
+        program = compile_effect_text(text)
+        self.assertTrue(program.is_fully_resolved)
+        self.assertEqual(program.operations[0].op, "apply_temporary_rule")
+
+    def test_damage_more_per_self_benched_resolves(self) -> None:
+        text = "This attack does 20 more damage for each of your Benched Pokémon."
+        program = compile_effect_text(text)
+        self.assertTrue(program.is_fully_resolved)
+        self.assertEqual(program.operations[0].op, "damage_per_benched")
+
 
 if __name__ == "__main__":
     unittest.main()
