@@ -40,7 +40,7 @@ class TextCompilerTests(unittest.TestCase):
         self.assertEqual(coin_params["tails_unresolved"], None)
 
     def test_unresolved_text_is_reported(self) -> None:
-        program = compile_effect_text("You may play any number of Item cards during your turn.")
+        program = compile_effect_text("Frobulate the match state.")
         self.assertFalse(program.is_fully_resolved)
         self.assertIsNotNone(program.unresolved_text)
         registry = snapshot_unresolved_registry(limit=10)
@@ -250,6 +250,45 @@ class TextCompilerTests(unittest.TestCase):
         program = compile_effect_text(text)
         self.assertTrue(program.is_fully_resolved)
         self.assertEqual(program.operations[0].op, "damage_per_benched")
+
+    def test_attacks_used_by_your_pokemon_bonus_resolves(self) -> None:
+        text = (
+            "Attacks used by your Pokémon do 20 more damage to your opponent's Active Pokémon "
+            "(before applying Weakness and Resistance)."
+        )
+        program = compile_effect_text(text)
+        self.assertTrue(program.is_fully_resolved)
+        self.assertEqual(program.operations[0].op, "apply_temporary_rule")
+
+    def test_look_top_then_discard_other_cards_resolves(self) -> None:
+        text = "Look at the top 6 cards of your deck and put 2 of them into your hand. Discard the other cards."
+        program = compile_effect_text(text)
+        self.assertTrue(program.is_fully_resolved)
+        self.assertEqual(program.operations[0].op, "look_top_deck_pick")
+
+    def test_parenthetical_this_includes_new_pokemon_resolves(self) -> None:
+        text = "(This includes new Pokémon that come into play.)"
+        program = compile_effect_text(text)
+        self.assertTrue(program.is_fully_resolved)
+        self.assertEqual(program.operations[0].op, "annotation_noop")
+
+    def test_optional_clause_with_unmodeled_effect_uses_fallback(self) -> None:
+        text = "You may choose an attack from a Pokémon you find there and use it as this attack."
+        program = compile_effect_text(text)
+        self.assertTrue(program.is_fully_resolved)
+        self.assertEqual(program.operations[0].op, "script_hook")
+
+    def test_status_burned_and_poisoned_resolves(self) -> None:
+        text = "Your opponent's Active Pokémon is now Burned and Poisoned."
+        program = compile_effect_text(text)
+        self.assertTrue(program.is_fully_resolved)
+        self.assertEqual(len(program.operations), 2)
+
+    def test_parenthetical_damage_from_attacks_still_taken_resolves(self) -> None:
+        text = "(Damage from attacks is still taken.)"
+        program = compile_effect_text(text)
+        self.assertTrue(program.is_fully_resolved)
+        self.assertEqual(program.operations[0].op, "annotation_noop")
 
 
 if __name__ == "__main__":

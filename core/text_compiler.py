@@ -1242,6 +1242,22 @@ def _status_confused_and_poisoned(match: re.Match[str]) -> list[EffectOperation]
     ]
 
 
+def _status_burned_and_poisoned(match: re.Match[str]) -> list[EffectOperation]:
+    _ = match
+    return [
+        EffectOperation(op="apply_status", params={"target": "opponent_active", "status": "Burned"}),
+        EffectOperation(op="apply_status", params={"target": "opponent_active", "status": "Poisoned"}),
+    ]
+
+
+def _status_paralyzed_and_poisoned(match: re.Match[str]) -> list[EffectOperation]:
+    _ = match
+    return [
+        EffectOperation(op="apply_status", params={"target": "opponent_active", "status": "Paralyzed"}),
+        EffectOperation(op="apply_status", params={"target": "opponent_active", "status": "Poisoned"}),
+    ]
+
+
 def _recover_supporter_from_discard(match: re.Match[str]) -> list[EffectOperation]:
     _ = match
     return [EffectOperation(op="recover_from_discard_to_hand", params={"count": 1, "descriptor": "supporter"})]
@@ -1273,6 +1289,19 @@ def _all_self_basic_no_retreat(match: re.Match[str]) -> list[EffectOperation]:
 def _during_next_turn_cannot_retreat(match: re.Match[str]) -> list[EffectOperation]:
     _ = match
     return [EffectOperation(op="apply_temporary_rule", params={"target": "self_active", "rule": "cannot_retreat_next_turn"})]
+
+
+def _move_energy_from_self_active_to_self_bench(match: re.Match[str]) -> list[EffectOperation]:
+    return [
+        EffectOperation(
+            op="move_energy",
+            params={"source": "self_active", "target": "self_bench", "count": int(match.group("count"))},
+        )
+    ]
+
+
+def _search_any_cards_to_hand(match: re.Match[str]) -> list[EffectOperation]:
+    return [EffectOperation(op="search_deck_to_hand", params={"count": int(match.group("count")), "descriptor": "any", "allow_less": True})]
 
 
 def _place_damage_counters_on_opponent_any(match: re.Match[str]) -> list[EffectOperation]:
@@ -3787,6 +3816,576 @@ CLAUSE_TEMPLATES: list[TextTemplate] = [
         builder=_damage_more_per_self_benched,
     ),
     TextTemplate(
+        name="parenthetical_this_includes_new_pokemon",
+        description="Parenthetical reminder for newly entering Pokémon.",
+        pattern=re.compile(
+            rf"^\(This includes new {_POKEMON_TOKEN} that come into play\.\)$",
+            re.IGNORECASE,
+        ),
+        builder=_parenthetical_noop,
+    ),
+    TextTemplate(
+        name="parenthetical_cant_evolve_first_or_turn_played",
+        description="Parenthetical reminder that Pokémon cannot evolve first/played turn.",
+        pattern=re.compile(
+            rf"^\(This {_POKEMON_TOKEN} can't evolve during your first turn or the turn you play it\.\)$",
+            re.IGNORECASE,
+        ),
+        builder=_parenthetical_noop,
+    ),
+    TextTemplate(
+        name="parenthetical_damage_from_attacks_still_taken",
+        description="Parenthetical reminder that attack damage is still taken.",
+        pattern=re.compile(
+            r"^\(Damage from attacks is still taken\.\)$",
+            re.IGNORECASE,
+        ),
+        builder=_parenthetical_noop,
+    ),
+    TextTemplate(
+        name="for_each_heads_choose_random_opponent_hand_card",
+        description="For each heads, choose a random opponent hand card.",
+        pattern=re.compile(
+            r"^For each heads, choose a random card from your opponent's hand\.$",
+            re.IGNORECASE,
+        ),
+        builder=_script_hook_builder("for-each-heads-choose-random-opponent-hand-card"),
+    ),
+    TextTemplate(
+        name="opponent_reveals_those_cards_and_shuffles_into_deck",
+        description="Opponent reveals chosen cards and shuffles them into deck.",
+        pattern=re.compile(
+            r"^Your opponent reveals those cards and shuffles them into their deck\.$",
+            re.IGNORECASE,
+        ),
+        builder=_script_hook_builder("opponent-reveals-those-cards-shuffles-into-deck"),
+    ),
+    TextTemplate(
+        name="look_top_n_put_m_into_hand",
+        description="Look at top N cards and put M into hand.",
+        pattern=re.compile(
+            r"^Look at the top (?P<look>\d+) cards of your deck and put (?P<pick>\d+) of them into your hand\.$",
+            re.IGNORECASE,
+        ),
+        builder=_once_look_top_pick_one,
+    ),
+    TextTemplate(
+        name="discard_the_other_cards",
+        description="Discard the other cards.",
+        pattern=re.compile(r"^Discard the other cards\.$", re.IGNORECASE),
+        builder=_script_hook_builder("discard-the-other-cards"),
+    ),
+    TextTemplate(
+        name="put_counters_per_basic_typed_energy_in_discard",
+        description="Put damage counters per basic typed energy in discard.",
+        pattern=re.compile(
+            rf"^Put (?P<count>\d+) damage counters on \d+ of your opponent's {_POKEMON_TOKEN} for each Basic \{{[A-Z]\}} Energy card in your discard pile\.$",
+            re.IGNORECASE,
+        ),
+        builder=_script_hook_builder("put-counters-per-basic-typed-energy-in-discard", ("count",)),
+    ),
+    TextTemplate(
+        name="then_shuffle_those_energy_cards_into_deck",
+        description="Then, shuffle those Energy cards into your deck.",
+        pattern=re.compile(r"^Then, shuffle those Energy cards into your deck\.$", re.IGNORECASE),
+        builder=_script_hook_builder("then-shuffle-those-energy-cards-into-deck"),
+    ),
+    TextTemplate(
+        name="each_player_with_tera_can_have_up_to_bench",
+        description="Each player with tera Pokémon in play can have increased bench size.",
+        pattern=re.compile(
+            rf"^Each player who has any Tera {_POKEMON_TOKEN} in play can have up to (?P<count>\d+) {_POKEMON_TOKEN} on their Bench\.$",
+            re.IGNORECASE,
+        ),
+        builder=_script_hook_builder("each-player-with-tera-can-have-up-to-bench", ("count",)),
+    ),
+    TextTemplate(
+        name="when_card_leaves_play_bench_discard_until",
+        description="When this card leaves play, discard from bench until threshold.",
+        pattern=re.compile(
+            rf"^When this card leaves play, both players discard {_POKEMON_TOKEN} from their Bench until they have (?P<count>\d+), and the player who played this card discards first\.$",
+            re.IGNORECASE,
+        ),
+        builder=_script_hook_builder("when-card-leaves-play-bench-discard-until", ("count",)),
+    ),
+    TextTemplate(
+        name="look_top_card_of_deck",
+        description="Look at the top card of your deck.",
+        pattern=re.compile(r"^Look at the top card of your deck\.$", re.IGNORECASE),
+        builder=_script_hook_builder("look-top-card-of-deck"),
+    ),
+    TextTemplate(
+        name="you_may_discard_that_card",
+        description="You may discard that card.",
+        pattern=re.compile(r"^You may discard that card\.$", re.IGNORECASE),
+        builder=_script_hook_builder("you-may-discard-that-card"),
+    ),
+    TextTemplate(
+        name="damage_to_each_opponent_benched",
+        description="Damage to each opponent benched Pokémon.",
+        pattern=re.compile(
+            rf"^This attack does (?P<amount>\d+) damage to each of your opponent's Benched {_POKEMON_TOKEN}\.$",
+            re.IGNORECASE,
+        ),
+        builder=_script_hook_builder("damage-to-each-opponent-benched", ("amount",)),
+    ),
+    TextTemplate(
+        name="damage_for_each_heads_generic",
+        description="Damage for each heads.",
+        pattern=re.compile(r"^This attack does (?P<amount>\d+) damage for each heads\.$", re.IGNORECASE),
+        builder=_script_hook_builder("damage-for-each-heads-generic", ("amount",)),
+    ),
+    TextTemplate(
+        name="once_when_moves_bench_to_active_search_attach_energy",
+        description="Once during turn when moving bench to active, search and attach energy.",
+        pattern=re.compile(
+            rf"^Once during your turn, when this {_POKEMON_TOKEN} moves from your Bench to the Active Spot, you may search your deck for up to (?P<count>\d+) Basic \{{[A-Z]\}} Energy cards and attach them to this {_POKEMON_TOKEN}\.$",
+            re.IGNORECASE,
+        ),
+        builder=_script_hook_builder("once-when-moves-bench-to-active-search-attach-energy", ("count",)),
+    ),
+    TextTemplate(
+        name="move_n_energy_from_self_active_to_self_bench",
+        description="Move N energy from this Pokémon to one benched Pokémon.",
+        pattern=re.compile(
+            rf"^Move (?P<count>\d+) Energy from this {_POKEMON_TOKEN} to \d+ of your Benched {_POKEMON_TOKEN}\.$",
+            re.IGNORECASE,
+        ),
+        builder=_move_energy_from_self_active_to_self_bench,
+    ),
+    TextTemplate(
+        name="discard_named_energy_from_self",
+        description="Discard named energy from this Pokémon.",
+        pattern=re.compile(
+            rf"^Discard (?:a|\d+) .+? Energy from this {_POKEMON_TOKEN}\.$",
+            re.IGNORECASE,
+        ),
+        builder=_script_hook_builder("discard-named-energy-from-self"),
+    ),
+    TextTemplate(
+        name="look_top_n_of_opponent_deck_reorder",
+        description="Look at top N of opponent deck and reorder.",
+        pattern=re.compile(
+            r"^Look at the top (?P<count>\d+) cards of your opponent's deck and put them back in any order\.$",
+            re.IGNORECASE,
+        ),
+        builder=_script_hook_builder("look-top-n-opponent-deck-reorder", ("count",)),
+    ),
+    TextTemplate(
+        name="reveal_top_n_opponent_choose_attack_shuffle_revealed",
+        description="Reveal top N opponent deck, may choose attack, shuffle revealed cards back.",
+        pattern=re.compile(
+            rf"^Reveal the top (?P<count>\d+) cards of your opponent's deck\. You may choose an attack from a {_POKEMON_TOKEN} you find there and use it as this attack\. Shuffle the revealed cards into your opponent's deck\.$",
+            re.IGNORECASE,
+        ),
+        builder=_script_hook_builder("reveal-top-n-opponent-choose-attack-shuffle-revealed", ("count",)),
+    ),
+    TextTemplate(
+        name="attacks_used_by_your_pokemon_bonus_to_opponent_active",
+        description="Attacks used by your Pokémon deal bonus to opponent active this turn.",
+        pattern=re.compile(
+            rf"^Attacks used by your {_POKEMON_TOKEN} do (?P<amount>\d+) more damage to your opponent's Active {_POKEMON_TOKEN} \(before applying Weakness and Resistance\)\.$",
+            re.IGNORECASE,
+        ),
+        builder=_turn_damage_bonus_to_active,
+    ),
+    TextTemplate(
+        name="you_may_search_deck_for_up_to_n_cards_to_hand",
+        description="You may search deck for up to N cards and put them into your hand.",
+        pattern=re.compile(
+            r"^You may search your deck for up to (?P<count>\d+) cards and put them into your hand\.$",
+            re.IGNORECASE,
+        ),
+        builder=_search_any_cards_to_hand,
+    ),
+    TextTemplate(
+        name="attack_also_bench_damage_per_prize_taken",
+        description="Attack also damages opponent bench per prizes taken.",
+        pattern=re.compile(
+            rf"^This attack also does (?P<amount>\d+) damage to each of your opponent's Benched {_POKEMON_TOKEN} for each Prize card your opponent has taken\.$",
+            re.IGNORECASE,
+        ),
+        builder=_script_hook_builder("attack-also-bench-damage-per-prize-taken", ("amount",)),
+    ),
+    TextTemplate(
+        name="during_next_turn_named_attack_bonus_damage",
+        description="During next turn, named attack does bonus damage.",
+        pattern=re.compile(
+            rf"^During your next turn, this {_POKEMON_TOKEN}'s .+? attack does (?P<amount>\d+) more damage \(before applying Weakness and Resistance\)\.$",
+            re.IGNORECASE,
+        ),
+        builder=_script_hook_builder("during-next-turn-named-attack-bonus-damage", ("amount",)),
+    ),
+    TextTemplate(
+        name="attack_also_damage_benched_with_damage_counters",
+        description="Attack also damages one benched opponent Pokémon that has counters.",
+        pattern=re.compile(
+            rf"^This attack also does (?P<amount>\d+) damage to \d+ of your opponent's Benched {_POKEMON_TOKEN} that has any damage counters on it\.$",
+            re.IGNORECASE,
+        ),
+        builder=_script_hook_builder("attack-also-damage-benched-with-damage-counters", ("amount",)),
+    ),
+    TextTemplate(
+        name="move_up_to_energy_bench_to_active",
+        description="Move up to N energy from your benched Pokémon to active Pokémon.",
+        pattern=re.compile(
+            rf"^Move up to (?P<count>\d+) Energy from your Benched {_POKEMON_TOKEN} to your Active {_POKEMON_TOKEN}\.$",
+            re.IGNORECASE,
+        ),
+        builder=_script_hook_builder("move-up-to-energy-bench-to-active", ("count",)),
+    ),
+    TextTemplate(
+        name="damage_for_each_trainer_card_find_there",
+        description="Damage for each Trainer card found there.",
+        pattern=re.compile(
+            r"^This attack does (?P<amount>\d+) damage for each Trainer card you find there\.$",
+            re.IGNORECASE,
+        ),
+        builder=_script_hook_builder("damage-for-each-trainer-card-find-there", ("amount",)),
+    ),
+    TextTemplate(
+        name="flip_coin_for_each_energy_attached_to_self",
+        description="Flip a coin for each energy attached to this Pokémon.",
+        pattern=re.compile(
+            rf"^Flip a coin for each Energy attached to this {_POKEMON_TOKEN}\.$",
+            re.IGNORECASE,
+        ),
+        builder=_script_hook_builder("flip-coin-for-each-energy-attached-to-self"),
+    ),
+    TextTemplate(
+        name="reveal_top_n_opponent_deck_full_combo",
+        description="Reveal top opponent deck cards, may copy attack, then shuffle revealed cards.",
+        pattern=re.compile(
+            rf"^Reveal the top (?P<count>\d+) cards of your opponent's deck\. You may choose an attack from a {_POKEMON_TOKEN} you find there and use it as this attack\. Shuffle the revealed cards into your opponent's deck\.$",
+            re.IGNORECASE,
+        ),
+        builder=_script_hook_builder("reveal-top-n-opponent-deck-full-combo", ("count",)),
+    ),
+    TextTemplate(
+        name="reveal_top_n_opponent_deck",
+        description="Reveal top N cards of opponent deck.",
+        pattern=re.compile(
+            r"^Reveal the top (?P<count>\d+) cards of your opponent's deck\.$",
+            re.IGNORECASE,
+        ),
+        builder=_script_hook_builder("reveal-top-n-opponent-deck", ("count",)),
+    ),
+    TextTemplate(
+        name="shuffle_revealed_cards_into_opponent_deck",
+        description="Shuffle revealed cards into opponent deck.",
+        pattern=re.compile(
+            r"^Shuffle the revealed cards into your opponent's deck\.$",
+            re.IGNORECASE,
+        ),
+        builder=_script_hook_builder("shuffle-revealed-cards-into-opponent-deck"),
+    ),
+    TextTemplate(
+        name="each_basic_typed_energy_on_all_self_provides_double",
+        description="Each basic typed energy on your Pokémon provides double typed energy.",
+        pattern=re.compile(
+            rf"^Each Basic \{{[A-Z]\}} Energy attached to all of your {_POKEMON_TOKEN} provides \{{[A-Z]\}}\{{[A-Z]\}} Energy\.$",
+            re.IGNORECASE,
+        ),
+        builder=_script_hook_builder("each-basic-typed-energy-on-all-self-provides-double"),
+    ),
+    TextTemplate(
+        name="discard_top_n_and_damage_per_basic_typed_energy_discarded",
+        description="Discard top cards then damage per typed basic energy discarded.",
+        pattern=re.compile(
+            rf"^Discard the top (?P<count>\d+) cards of your deck, and this attack does (?P<amount>\d+) damage for each Basic \{{[A-Z]\}} Energy card that you discarded in this way\.$",
+            re.IGNORECASE,
+        ),
+        builder=_script_hook_builder("discard-top-n-and-damage-per-basic-typed-energy-discarded", ("count", "amount")),
+    ),
+    TextTemplate(
+        name="once_when_moves_active_to_bench_may_use_ability",
+        description="Once during turn when this Pokémon moves active to bench, may use ability.",
+        pattern=re.compile(
+            rf"^Once during your turn, when this {_POKEMON_TOKEN} moves from the Active Spot to your Bench, you may use this Ability\.$",
+            re.IGNORECASE,
+        ),
+        builder=_script_hook_builder("once-when-moves-active-to-bench-may-use-ability"),
+    ),
+    TextTemplate(
+        name="you_may_discard_all_energy_for_bonus_damage",
+        description="You may discard all energy from this Pokémon for bonus damage.",
+        pattern=re.compile(
+            rf"^You may discard all Energy from this {_POKEMON_TOKEN} and have this attack do (?P<amount>\d+) more damage\.$",
+            re.IGNORECASE,
+        ),
+        builder=_script_hook_builder("you-may-discard-all-energy-for-bonus-damage", ("amount",)),
+    ),
+    TextTemplate(
+        name="attacks_used_by_typed_pokemon_bonus_to_opponent_active",
+        description="Attacks used by your typed Pokémon deal bonus to opponent active.",
+        pattern=re.compile(
+            rf"^Attacks used by your \{{[A-Z]\}} {_POKEMON_TOKEN} do (?P<amount>\d+) more damage to your opponent's Active {_POKEMON_TOKEN} \(before applying Weakness and Resistance\)\.$",
+            re.IGNORECASE,
+        ),
+        builder=_turn_damage_bonus_to_active,
+    ),
+    TextTemplate(
+        name="active_now_affected_by_that_special_condition",
+        description="Opponent active is now affected by that special condition.",
+        pattern=re.compile(
+            rf"^Your opponent's Active {_POKEMON_TOKEN} is now affected by that Special Condition\.$",
+            re.IGNORECASE,
+        ),
+        builder=_script_hook_builder("active-now-affected-by-that-special-condition"),
+    ),
+    TextTemplate(
+        name="status_burned_and_poisoned",
+        description="Apply both Burned and Poisoned to opponent active.",
+        pattern=re.compile(
+            rf"^Your opponent's Active {_POKEMON_TOKEN} is now Burned and Poisoned\.$",
+            re.IGNORECASE,
+        ),
+        builder=_status_burned_and_poisoned,
+    ),
+    TextTemplate(
+        name="status_paralyzed_and_poisoned",
+        description="Apply both Paralyzed and Poisoned to opponent active.",
+        pattern=re.compile(
+            rf"^Your opponent's Active {_POKEMON_TOKEN} is now Paralyzed and Poisoned\.$",
+            re.IGNORECASE,
+        ),
+        builder=_status_paralyzed_and_poisoned,
+    ),
+    TextTemplate(
+        name="typed_pokemon_in_play_have_no_abilities",
+        description="Typed Pokémon in play (both players) have no abilities.",
+        pattern=re.compile(
+            rf"^\{{[A-Z]\}} {_POKEMON_TOKEN} in play \(both yours and your opponent's\) have no Abilities\.$",
+            re.IGNORECASE,
+        ),
+        builder=_script_hook_builder("typed-pokemon-in-play-have-no-abilities"),
+    ),
+    TextTemplate(
+        name="card_can_only_attach_to_named_pokemon",
+        description="This card can only be attached to named Pokémon.",
+        pattern=re.compile(
+            rf"^This card can only be attached to .+? {_POKEMON_TOKEN}\.$",
+            re.IGNORECASE,
+        ),
+        builder=_script_hook_builder("card-can-only-attach-to-named-pokemon"),
+    ),
+    TextTemplate(
+        name="shuffle_up_to_basic_energy_from_discard_into_deck",
+        description="Shuffle up to N basic energy from discard into deck.",
+        pattern=re.compile(
+            r"^Shuffle up to (?P<count>\d+) Basic Energy cards from your discard pile into your deck\.$",
+            re.IGNORECASE,
+        ),
+        builder=_script_hook_builder("shuffle-up-to-basic-energy-from-discard-into-deck", ("count",)),
+    ),
+    TextTemplate(
+        name="shuffle_up_to_pokemon_from_discard_into_deck",
+        description="Shuffle up to N Pokémon from discard into deck.",
+        pattern=re.compile(
+            rf"^Shuffle up to (?P<count>\d+) {_POKEMON_TOKEN} from your discard pile into your deck\.$",
+            re.IGNORECASE,
+        ),
+        builder=_script_hook_builder("shuffle-up-to-pokemon-from-discard-into-deck", ("count",)),
+    ),
+    TextTemplate(
+        name="damage_per_self_prize_taken_base",
+        description="Damage for each prize card you have taken.",
+        pattern=re.compile(
+            r"^This attack does (?P<amount>\d+) damage for each Prize card you have taken\.$",
+            re.IGNORECASE,
+        ),
+        builder=_script_hook_builder("damage-per-self-prize-taken-base", ("amount",)),
+    ),
+    TextTemplate(
+        name="switch_card_from_hand_with_top_of_deck",
+        description="Switch a card from hand with top of deck.",
+        pattern=re.compile(
+            r"^Switch a card from your hand with the top card of your deck\.$",
+            re.IGNORECASE,
+        ),
+        builder=_script_hook_builder("switch-card-from-hand-with-top-of-deck"),
+    ),
+    TextTemplate(
+        name="choose_self_basic_pokemon_in_play",
+        description="Choose one of your basic Pokémon in play.",
+        pattern=re.compile(
+            rf"^Choose \d+ of your Basic {_POKEMON_TOKEN} in play\.$",
+            re.IGNORECASE,
+        ),
+        builder=_script_hook_builder("choose-self-basic-pokemon-in-play"),
+    ),
+    TextTemplate(
+        name="cannot_use_card_first_turn_or_new_basic",
+        description="Cannot use this card on first turn or new basic put into play this turn.",
+        pattern=re.compile(
+            rf"^You can't use this card during your first turn or on a Basic {_POKEMON_TOKEN} that was put into play this turn\.$",
+            re.IGNORECASE,
+        ),
+        builder=_script_hook_builder("cannot-use-card-first-turn-or-new-basic"),
+    ),
+    TextTemplate(
+        name="once_each_players_turn_may_switch_typed_active",
+        description="Once during each player's turn, may switch typed active with typed benched.",
+        pattern=re.compile(
+            rf"^Once during each player's turn, that player may switch their Active \{{[A-Z]\}} {_POKEMON_TOKEN} with \d+ of their Benched \{{[A-Z]\}} {_POKEMON_TOKEN}\.$",
+            re.IGNORECASE,
+        ),
+        builder=_script_hook_builder("once-each-players-turn-may-switch-typed-active"),
+    ),
+    TextTemplate(
+        name="discard_n_basic_typed_energy_from_hand",
+        description="Discard N basic typed energy cards from your hand.",
+        pattern=re.compile(
+            r"^Discard (?P<count>\d+) Basic \{[A-Z]\} Energy cards from your hand\.$",
+            re.IGNORECASE,
+        ),
+        builder=_script_hook_builder("discard-n-basic-typed-energy-from-hand", ("count",)),
+    ),
+    TextTemplate(
+        name="self_takes_less_damage_from_opponent_two_types",
+        description="This Pokémon takes less damage from opponent typed Pokémon attacks.",
+        pattern=re.compile(
+            rf"^This {_POKEMON_TOKEN} takes (?P<amount>\d+) less damage from attacks from your opponent's \{{[A-Z]\}} or \{{[A-Z]\}} {_POKEMON_TOKEN} \(after applying Weakness and Resistance\)\.$",
+            re.IGNORECASE,
+        ),
+        builder=_script_hook_builder("self-takes-less-damage-from-opponent-two-types", ("amount",)),
+    ),
+    TextTemplate(
+        name="heal_fixed_damage_from_benched_typed",
+        description="Heal fixed damage from one of your benched typed Pokémon.",
+        pattern=re.compile(
+            rf"^Heal (?P<amount>\d+) damage from \d+ of your Benched \{{[A-Z]\}} {_POKEMON_TOKEN}\.$",
+            re.IGNORECASE,
+        ),
+        builder=_script_hook_builder("heal-fixed-damage-from-benched-typed", ("amount",)),
+    ),
+    TextTemplate(
+        name="discard_n_energy_damage_each_of_n_opponent_pokemon",
+        description="Discard N energy then deal damage to each of N opponent Pokémon.",
+        pattern=re.compile(
+            rf"^Discard (?P<count>\d+) Energy from this {_POKEMON_TOKEN}, and this attack does (?P<amount>\d+) damage to each of (?P<targets>\d+) of your opponent's {_POKEMON_TOKEN}\.$",
+            re.IGNORECASE,
+        ),
+        builder=_script_hook_builder("discard-n-energy-damage-each-of-n-opponent-pokemon", ("count", "amount", "targets")),
+    ),
+    TextTemplate(
+        name="prevent_damage_counters_on_bench_from_opponent_effects",
+        description="Prevent damage counters on benched Pokémon from opponent attack/ability effects.",
+        pattern=re.compile(
+            rf"^Prevent all damage counters from being placed on Benched {_POKEMON_TOKEN} \(both yours and your opponent's\) by effects of attacks and Abilities from the opponent's {_POKEMON_TOKEN}\.$",
+            re.IGNORECASE,
+        ),
+        builder=_script_hook_builder("prevent-damage-counters-on-bench-from-opponent-effects"),
+    ),
+    TextTemplate(
+        name="discard_tool_or_special_energy_or_stadium",
+        description="Discard a tool/special energy from opponent Pokémon or discard stadium in play.",
+        pattern=re.compile(
+            rf"^Discard a {_POKEMON_TOKEN} Tool or Special Energy card from \d+ of your opponent's {_POKEMON_TOKEN}, or discard a Stadium in play\.$",
+            re.IGNORECASE,
+        ),
+        builder=_script_hook_builder("discard-tool-or-special-energy-or-stadium"),
+    ),
+    TextTemplate(
+        name="look_top_n_put_typed_on_bench_then_shuffle_bottom_and_first_turn_gate",
+        description="Look top cards, bench typed Pokémon, move others to bottom, plus first-turn gate.",
+        pattern=re.compile(
+            rf"^Look at the top (?P<count>\d+) cards of your deck and put a \{{[A-Z]\}} {_POKEMON_TOKEN} you find there onto your Bench\. Shuffle the other cards and put them on the bottom of your deck\. You can't use this card during your first turn\.$",
+            re.IGNORECASE,
+        ),
+        builder=_script_hook_builder("look-top-n-put-typed-on-bench-then-shuffle-bottom-and-first-turn-gate", ("count",)),
+    ),
+    TextTemplate(
+        name="heal_fixed_damage_from_active_with_min_energy",
+        description="Heal fixed damage from active Pokémon with minimum attached energy.",
+        pattern=re.compile(
+            rf"^Heal (?P<amount>\d+) damage from your Active {_POKEMON_TOKEN} that has (?P<count>\d+) or more Energy attached\.$",
+            re.IGNORECASE,
+        ),
+        builder=_script_hook_builder("heal-fixed-damage-from-active-with-min-energy", ("amount", "count")),
+    ),
+    TextTemplate(
+        name="attached_pokemon_takes_less_from_opponent_with_ability",
+        description="Attached Pokémon takes less damage from opponent Pokémon with an ability.",
+        pattern=re.compile(
+            rf"^The {_POKEMON_TOKEN} this card is attached to takes (?P<amount>\d+) less damage from attacks from your opponent's {_POKEMON_TOKEN} that have an Ability \(after applying Weakness and Resistance\)\.$",
+            re.IGNORECASE,
+        ),
+        builder=_script_hook_builder("attached-pokemon-takes-less-from-opponent-with-ability", ("amount",)),
+    ),
+    TextTemplate(
+        name="opponent_reveals_hand_damage_per_energy_found",
+        description="Opponent reveals hand and attack damage scales with energy cards found.",
+        pattern=re.compile(
+            r"^Your opponent reveals their hand, and this attack does (?P<amount>\d+) damage for each Energy card you find there\.$",
+            re.IGNORECASE,
+        ),
+        builder=_script_hook_builder("opponent-reveals-hand-damage-per-energy-found", ("amount",)),
+    ),
+    TextTemplate(
+        name="attack_also_damages_each_opponent_bench",
+        description="Attack also damages each opponent benched Pokémon.",
+        pattern=re.compile(
+            rf"^This attack also does (?P<amount>\d+) damage to each of your opponent's Benched {_POKEMON_TOKEN}\.$",
+            re.IGNORECASE,
+        ),
+        builder=_script_hook_builder("attack-also-damages-each-opponent-bench", ("amount",)),
+    ),
+    TextTemplate(
+        name="whenever_opponent_active_moves_to_bench_place_counters",
+        description="Whenever opponent active moves to bench, place damage counters on that Pokémon.",
+        pattern=re.compile(
+            rf"^Whenever your opponent's Active {_POKEMON_TOKEN} moves to the Bench during their turn, place (?P<count>\d+) damage counters on that {_POKEMON_TOKEN}\.$",
+            re.IGNORECASE,
+        ),
+        builder=_script_hook_builder("whenever-opponent-active-moves-to-bench-place-counters", ("count",)),
+    ),
+    TextTemplate(
+        name="damage_per_energy_attached_to_all_opponent_pokemon",
+        description="Damage for each energy attached to all of opponent's Pokémon.",
+        pattern=re.compile(
+            rf"^This attack does (?P<amount>\d+) damage for each Energy attached to all of your opponent's {_POKEMON_TOKEN}\.$",
+            re.IGNORECASE,
+        ),
+        builder=_script_hook_builder("damage-per-energy-attached-to-all-opponent-pokemon", ("amount",)),
+    ),
+    TextTemplate(
+        name="discard_n_energy_and_bench_damage",
+        description="Discard N energy and also deal damage to one opponent benched Pokémon.",
+        pattern=re.compile(
+            rf"^Discard (?P<count>\d+) Energy from this {_POKEMON_TOKEN}, and this attack also does (?P<amount>\d+) damage to \d+ of your opponent's Benched {_POKEMON_TOKEN}\.$",
+            re.IGNORECASE,
+        ),
+        builder=_script_hook_builder("discard-n-energy-and-bench-damage", ("count", "amount")),
+    ),
+    TextTemplate(
+        name="for_each_heads_search_attach_basic_energy_any_way",
+        description="For each heads, search and attach up to N basic energy cards in any way.",
+        pattern=re.compile(
+            rf"^For each heads, search your deck for up to (?P<count>\d+) Basic Energy cards and attach them to your {_POKEMON_TOKEN} in any way you like\.$",
+            re.IGNORECASE,
+        ),
+        builder=_script_hook_builder("for-each-heads-search-attach-basic-energy-any-way", ("count",)),
+    ),
+    TextTemplate(
+        name="during_turn_if_ko_by_named_take_more_prize",
+        description="During this turn, if opponent active is KOed by named Pokémon attack, take more prizes.",
+        pattern=re.compile(
+            rf"^During this turn, if your opponent's Active {_POKEMON_TOKEN} is Knocked Out by damage from an attack used by your .+? {_POKEMON_TOKEN}, take (?P<count>\d+) more Prize cards?\.$",
+            re.IGNORECASE,
+        ),
+        builder=_script_hook_builder("during-turn-if-ko-by-named-take-more-prize", ("count",)),
+    ),
+    TextTemplate(
+        name="once_each_players_turn_if_played_named_supporter_may_draw",
+        description="Once during each player's turn, if they played named supporter, they may draw cards.",
+        pattern=re.compile(
+            r"^Once during each player's turn, if they played a Supporter card that has \".+?\" in its name from their hand this turn, they may draw (?P<count>\d+) cards\.$",
+            re.IGNORECASE,
+        ),
+        builder=_script_hook_builder("once-each-players-turn-if-played-named-supporter-may-draw", ("count",)),
+    ),
+    TextTemplate(
         name="during_opponent_next_turn_generic",
         description="Generic during opponent next turn clause fallback.",
         pattern=re.compile(r"^During your opponent's next turn, .+\.$", re.IGNORECASE),
@@ -4323,6 +4922,12 @@ def _compile_clause(clause: str) -> tuple[list[EffectOperation], str | None]:
                 ],
                 "optional_clause",
             )
+        if deferred_script_fallback is None:
+            deferred_script_fallback = _script_hook_from_clause(
+                "optional_clause",
+                clause,
+                {"effect": optional_effect},
+            )
 
     conditional_match = _CONDITIONAL_TEMPLATE.fullmatch(clause)
     if conditional_match:
@@ -4353,22 +4958,6 @@ def _compile_clause(clause: str) -> tuple[list[EffectOperation], str | None]:
                     "effect": conditional_effect,
                 },
             )
-
-    if " and " in clause.lower() and not clause.lower().startswith("if "):
-        parts = [part.strip() for part in re.split(r"\band\b", clause, flags=re.IGNORECASE) if part.strip()]
-        if len(parts) > 1:
-            composite_operations: list[EffectOperation] = []
-            resolved_parts = 0
-            for part in parts:
-                candidate = part if part.endswith(".") else f"{part}."
-                part_operations, template_name = _compile_clause(candidate)
-                if template_name is None:
-                    composite_operations = []
-                    break
-                resolved_parts += 1
-                composite_operations.extend(part_operations)
-            if resolved_parts == len(parts):
-                return composite_operations, "composite_and_clause"
 
     coin_match = COIN_FLIP_TEMPLATE.fullmatch(clause)
     if coin_match:
@@ -4425,6 +5014,22 @@ def _compile_clause(clause: str) -> tuple[list[EffectOperation], str | None]:
         match = template.pattern.fullmatch(clause)
         if match:
             return template.builder(match), template.name
+
+    if " and " in clause.lower() and not clause.lower().startswith("if "):
+        parts = [part.strip() for part in re.split(r"\band\b", clause, flags=re.IGNORECASE) if part.strip()]
+        if len(parts) > 1:
+            composite_operations: list[EffectOperation] = []
+            resolved_parts = 0
+            for part in parts:
+                candidate = part if part.endswith(".") else f"{part}."
+                part_operations, template_name = _compile_clause(candidate)
+                if template_name is None:
+                    composite_operations = []
+                    break
+                resolved_parts += 1
+                composite_operations.extend(part_operations)
+            if resolved_parts == len(parts):
+                return composite_operations, "composite_and_clause"
 
     fallback = resolve_script_fallback(clause)
     if fallback is not None:
