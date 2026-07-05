@@ -290,6 +290,27 @@ class TextCompilerTests(unittest.TestCase):
         self.assertTrue(program.is_fully_resolved)
         self.assertEqual(program.operations[0].op, "annotation_noop")
 
+    def test_search_card_shuffle_then_put_top_resolves(self) -> None:
+        text = "Search your deck for a card. Shuffle your deck, then put that card on top of it."
+        program = compile_effect_text(text)
+        self.assertTrue(program.is_fully_resolved)
+        self.assertEqual(program.operations[0].op, "script_hook")
+
+    def test_once_each_players_turn_search_basic_to_bench_resolves(self) -> None:
+        text = (
+            "Once during each player's turn, that player may search their deck for a Basic Pokémon and put it onto "
+            "their Bench. Then, that player shuffles their deck."
+        )
+        program = compile_effect_text(text)
+        self.assertTrue(program.is_fully_resolved)
+        self.assertEqual(program.operations[0].op, "script_hook")
+
+    def test_status_burned_confused_poisoned_resolves(self) -> None:
+        text = "Your opponent's Active Pokémon is now Burned, Confused, and Poisoned."
+        program = compile_effect_text(text)
+        self.assertTrue(program.is_fully_resolved)
+        self.assertEqual(len(program.operations), 3)
+
 
 if __name__ == "__main__":
     unittest.main()
