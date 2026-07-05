@@ -95,8 +95,43 @@
 
         <section class="card">
             <h2>AI vs AI Simulation</h2>
-            <button onclick="runSimulation()">Run Simulation</button>
+            <div class="row">
+                <div>
+                    <label for="sim-turn-limit">Turn Limit</label>
+                    <input id="sim-turn-limit" value="10" />
+                </div>
+                <div>
+                    <label for="sim-seed">Seed (optional)</label>
+                    <input id="sim-seed" value="" placeholder="random if empty" />
+                </div>
+            </div>
+            <div style="margin-top: 10px;" class="row">
+                <button onclick="runSimulation()">Run Simulation</button>
+                <button onclick="verifyReplay()">Verify Deterministic Replay</button>
+            </div>
             <pre id="simulation-output">Click "Run Simulation" to execute a blueprint-driven battle.</pre>
+        </section>
+
+        <section class="card">
+            <h2>Batch Simulation Metrics</h2>
+            <div class="row">
+                <div>
+                    <label for="batch-games">Games</label>
+                    <input id="batch-games" value="20" />
+                </div>
+                <div>
+                    <label for="batch-turn-limit">Turn Limit</label>
+                    <input id="batch-turn-limit" value="10" />
+                </div>
+                <div>
+                    <label for="batch-seed">Base Seed (optional)</label>
+                    <input id="batch-seed" value="" placeholder="empty = random per game" />
+                </div>
+            </div>
+            <div style="margin-top: 10px;">
+                <button onclick="runBatchSimulation()">Run Batch Simulation</button>
+            </div>
+            <pre id="batch-output">Batch simulation stats will appear here.</pre>
         </section>
 
         <section class="card">
@@ -148,6 +183,8 @@
             </div>
             <div style="margin-top: 10px;">
                 <button onclick="runCoverageAnalysis()">Run Coverage Analysis</button>
+                <button onclick="loadUnresolvedRegistry()">View Unresolved Registry</button>
+                <button onclick="clearUnresolvedRegistry()">Clear Unresolved Registry</button>
             </div>
             <pre id="coverage-output">Coverage analysis output will appear here.</pre>
         </section>
@@ -200,6 +237,70 @@
             </div>
             <pre id="yolo-output">YOLO pipeline output will appear here.</pre>
         </section>
+
+        <section class="card">
+            <h2>Legality Snapshot</h2>
+            <p class="muted">Build a regulation-mark + release-gate legality snapshot.</p>
+            <div class="row">
+                <div>
+                    <label for="legality-date">As Of Date (YYYY-MM-DD, optional)</label>
+                    <input id="legality-date" value="" placeholder="today if empty" />
+                </div>
+                <div>
+                    <label for="legality-wait-days">Waiting Days</label>
+                    <input id="legality-wait-days" value="14" />
+                </div>
+                <div>
+                    <label for="legality-limit">Card Limit</label>
+                    <input id="legality-limit" value="400" />
+                </div>
+            </div>
+            <div style="margin-top: 10px;">
+                <button onclick="runLegalitySnapshot()">Run Legality Snapshot</button>
+            </div>
+            <pre id="legality-output">Legality snapshot output will appear here.</pre>
+        </section>
+
+        <section class="card">
+            <h2>Quality Gates</h2>
+            <p class="muted">Run replay determinism + coverage regression + legality checks.</p>
+            <div class="row">
+                <div>
+                    <label for="quality-coverage-limit">Coverage Limit</label>
+                    <input id="quality-coverage-limit" value="250" />
+                </div>
+                <div>
+                    <label for="quality-legality-limit">Legality Limit</label>
+                    <input id="quality-legality-limit" value="300" />
+                </div>
+            </div>
+            <div style="margin-top: 10px;" class="row">
+                <label><input id="quality-update-baseline" type="checkbox" /> Update baseline</label>
+                <label><input id="quality-force-refresh" type="checkbox" /> Force refresh</label>
+            </div>
+            <div style="margin-top: 10px;">
+                <button onclick="runQualityGates()">Run Quality Gates</button>
+            </div>
+            <pre id="quality-output">Quality gate output will appear here.</pre>
+        </section>
+
+        <section class="card">
+            <h2>Data Pipeline Health</h2>
+            <p class="muted">Run schema drift and source reliability checks for TCGdex ingest.</p>
+            <div class="row">
+                <div>
+                    <label for="pipeline-limit">Card Limit</label>
+                    <input id="pipeline-limit" value="200" />
+                </div>
+                <div>
+                    <label><input id="pipeline-write-snapshot" type="checkbox" checked /> Write artifact snapshot</label>
+                </div>
+            </div>
+            <div style="margin-top: 10px;">
+                <button onclick="runPipelineHealth()">Run Pipeline Health</button>
+            </div>
+            <pre id="pipeline-output">Pipeline health output will appear here.</pre>
+        </section>
     </main>
 
     <script>
@@ -207,16 +308,85 @@
             return JSON.stringify(data, null, 2);
         }
 
+        function parseSimulationInputs() {
+            const rawTurnLimit = document.getElementById('sim-turn-limit').value.trim();
+            const rawSeed = document.getElementById('sim-seed').value.trim();
+
+            const turnLimit = Number(rawTurnLimit || '10');
+            if (!Number.isFinite(turnLimit)) {
+                throw new Error('Turn limit must be numeric.');
+            }
+
+            let seed = null;
+            if (rawSeed !== '') {
+                const parsedSeed = Number(rawSeed);
+                if (!Number.isFinite(parsedSeed)) {
+                    throw new Error('Seed must be numeric when provided.');
+                }
+                seed = parsedSeed;
+            }
+
+            return { turn_limit: turnLimit, seed };
+        }
+
         async function runSimulation() {
             const output = document.getElementById('simulation-output');
             output.textContent = 'Running simulation...';
 
             try {
-                const response = await fetch('/run_sim', { method: 'POST' });
+                const payload = parseSimulationInputs();
+                const response = await fetch('/run_sim', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
                 const data = await response.json();
                 output.textContent = pretty(data);
             } catch (error) {
                 output.textContent = `Simulation error: ${error.message}`;
+            }
+        }
+
+        async function verifyReplay() {
+            const output = document.getElementById('simulation-output');
+            output.textContent = 'Verifying deterministic replay...';
+
+            try {
+                const payload = parseSimulationInputs();
+                const response = await fetch('/run_sim/verify_replay', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await response.json();
+                output.textContent = pretty(data);
+            } catch (error) {
+                output.textContent = `Replay verification error: ${error.message}`;
+            }
+        }
+
+        async function runBatchSimulation() {
+            const output = document.getElementById('batch-output');
+            output.textContent = 'Running batch simulation...';
+
+            try {
+                const games = Number(document.getElementById('batch-games').value.trim() || '20');
+                const turnLimit = Number(document.getElementById('batch-turn-limit').value.trim() || '10');
+                const seedRaw = document.getElementById('batch-seed').value.trim();
+                const baseSeed = seedRaw === '' ? null : Number(seedRaw);
+                if (!Number.isFinite(games) || !Number.isFinite(turnLimit) || (baseSeed !== null && !Number.isFinite(baseSeed))) {
+                    throw new Error('Games, turn limit, and base seed (if provided) must be numeric.');
+                }
+
+                const response = await fetch('/run_sim/batch', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ games, turn_limit: turnLimit, base_seed: baseSeed })
+                });
+                const data = await response.json();
+                output.textContent = pretty(data);
+            } catch (error) {
+                output.textContent = `Batch simulation error: ${error.message}`;
             }
         }
 
@@ -340,6 +510,30 @@
             }
         }
 
+        async function loadUnresolvedRegistry() {
+            const output = document.getElementById('coverage-output');
+            output.textContent = 'Loading unresolved registry...';
+            try {
+                const response = await fetch('/coverage/unresolved_registry?limit=100');
+                const data = await response.json();
+                output.textContent = pretty(data);
+            } catch (error) {
+                output.textContent = `Unresolved registry error: ${error.message}`;
+            }
+        }
+
+        async function clearUnresolvedRegistry() {
+            const output = document.getElementById('coverage-output');
+            output.textContent = 'Clearing unresolved registry...';
+            try {
+                const response = await fetch('/coverage/unresolved_registry/clear', { method: 'POST' });
+                const data = await response.json();
+                output.textContent = pretty(data);
+            } catch (error) {
+                output.textContent = `Failed to clear unresolved registry: ${error.message}`;
+            }
+        }
+
         async function runTemplateRecommendations() {
             const output = document.getElementById('reco-output');
             output.textContent = 'Mining template recommendations...';
@@ -423,6 +617,84 @@
                 output.textContent = pretty(data);
             } catch (error) {
                 output.textContent = `YOLO error: ${error.message}`;
+            }
+        }
+
+        async function runLegalitySnapshot() {
+            const output = document.getElementById('legality-output');
+            output.textContent = 'Building legality snapshot...';
+            try {
+                const asOfDate = document.getElementById('legality-date').value.trim() || null;
+                const waitingDays = Number(document.getElementById('legality-wait-days').value.trim() || '14');
+                const limitCards = Number(document.getElementById('legality-limit').value.trim() || '400');
+                if (!Number.isFinite(waitingDays) || !Number.isFinite(limitCards)) {
+                    throw new Error('Waiting days and card limit must be numeric.');
+                }
+                const response = await fetch('/legality/snapshot', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        as_of_date: asOfDate,
+                        waiting_days: waitingDays,
+                        limit_cards: limitCards
+                    })
+                });
+                const data = await response.json();
+                output.textContent = pretty(data);
+            } catch (error) {
+                output.textContent = `Legality snapshot error: ${error.message}`;
+            }
+        }
+
+        async function runQualityGates() {
+            const output = document.getElementById('quality-output');
+            output.textContent = 'Running quality gates...';
+            try {
+                const coverageLimit = Number(document.getElementById('quality-coverage-limit').value.trim() || '250');
+                const legalityLimit = Number(document.getElementById('quality-legality-limit').value.trim() || '300');
+                const updateBaseline = document.getElementById('quality-update-baseline').checked;
+                const forceRefresh = document.getElementById('quality-force-refresh').checked;
+                if (!Number.isFinite(coverageLimit) || !Number.isFinite(legalityLimit)) {
+                    throw new Error('Quality gate limits must be numeric.');
+                }
+                const response = await fetch('/quality/gates', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        coverage_limit_cards: coverageLimit,
+                        legality_limit_cards: legalityLimit,
+                        update_baseline: updateBaseline,
+                        force_refresh: forceRefresh
+                    })
+                });
+                const data = await response.json();
+                output.textContent = pretty(data);
+            } catch (error) {
+                output.textContent = `Quality gates error: ${error.message}`;
+            }
+        }
+
+        async function runPipelineHealth() {
+            const output = document.getElementById('pipeline-output');
+            output.textContent = 'Running data pipeline health checks...';
+            try {
+                const limitCards = Number(document.getElementById('pipeline-limit').value.trim() || '200');
+                const writeSnapshot = document.getElementById('pipeline-write-snapshot').checked;
+                if (!Number.isFinite(limitCards)) {
+                    throw new Error('Pipeline card limit must be numeric.');
+                }
+                const response = await fetch('/data/pipeline/health', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        limit_cards: limitCards,
+                        write_snapshot: writeSnapshot
+                    })
+                });
+                const data = await response.json();
+                output.textContent = pretty(data);
+            } catch (error) {
+                output.textContent = `Pipeline health error: ${error.message}`;
             }
         }
 

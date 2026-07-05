@@ -1,0 +1,24 @@
+[
+  {
+    "name": "status-chain-replaces-rotating-statuses",
+    "operations": [
+      {"op": "apply_status", "params": {"target": "self_active", "status": "Asleep"}},
+      {"op": "apply_status", "params": {"target": "self_active", "status": "Confused"}},
+      {"op": "apply_status", "params": {"target": "self_active", "status": "Paralyzed"}}
+    ],
+    "expected_statuses": ["Paralyzed"]
+  },
+  {
+    "name": "next-turn-damage-reduction-applies",
+    "setup_operations": [
+      {"op": "modify_incoming_damage_next_turn", "params": {"target": "self_active", "amount": 20}}
+    ],
+    "operations": [
+      {"op": "deal_damage", "params": {"target": "opponent_active", "amount": 50}}
+    ],
+    "setup_actor": "p2",
+    "actor": "p1",
+    "expected_target_hp": 90
+  }
+]
+
