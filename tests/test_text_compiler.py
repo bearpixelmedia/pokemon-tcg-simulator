@@ -212,6 +212,27 @@ class TextCompilerTests(unittest.TestCase):
         self.assertTrue(program.is_fully_resolved)
         self.assertEqual(len(program.operations), 2)
 
+    def test_once_if_active_spot_discard_energy_ability_resolves(self) -> None:
+        text = (
+            "Once during your turn, if this Pokémon is in the Active Spot, you may discard a Basic {W} Energy card "
+            "from your hand in order to use this Ability."
+        )
+        program = compile_effect_text(text)
+        self.assertTrue(program.is_fully_resolved)
+        self.assertEqual(program.operations[0].op, "script_hook")
+
+    def test_search_then_shuffle_generic_resolves(self) -> None:
+        text = "Search your deck for a Mega Evolution Pokémon ex, reveal it, and put it into your hand. Then, shuffle your deck."
+        program = compile_effect_text(text)
+        self.assertTrue(program.is_fully_resolved)
+        self.assertEqual(program.operations[0].op, "script_hook")
+
+    def test_limit_named_ability_phrase_each_turn_resolves(self) -> None:
+        text = 'You can\'t use more than 1 Ability that has "Last-Ditch" in its name each turn.'
+        program = compile_effect_text(text)
+        self.assertTrue(program.is_fully_resolved)
+        self.assertEqual(program.operations[0].op, "script_hook")
+
 
 if __name__ == "__main__":
     unittest.main()
