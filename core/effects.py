@@ -137,7 +137,213 @@ def _apply_script_hook_inference(
         events.append(f"{actor} resolved scripted hook: turn will end.")
         return True
 
+    if hook_id == "search-then-shuffle-generic" and clause:
+        hand_match = re.match(
+            r"^Search your deck for (?:up to )?(?P<count>\d+|a|an) .+ and put (?:them|it) into your hand\. Then, shuffle your deck\.$",
+            clause,
+            flags=re.IGNORECASE,
+        )
+        if hand_match:
+            count = _parse_count_token(hand_match.group("count"))
+            if count < 0:
+                count = 1
+            _apply_operation(
+                EffectOperation(op="search_deck_to_hand", params={"count": count, "descriptor": "matching", "allow_less": True}),
+                state,
+                actor,
+                rng,
+                events,
+            )
+            _apply_operation(EffectOperation(op="shuffle_deck", params={}), state, actor, rng, events)
+            return True
+
+        bench_match = re.match(
+            r"^Search your deck for (?:up to )?(?P<count>\d+|a|an) .+ and put (?:them|it) onto your Bench\. Then, shuffle your deck\.$",
+            clause,
+            flags=re.IGNORECASE,
+        )
+        if bench_match:
+            count = _parse_count_token(bench_match.group("count"))
+            if count < 0:
+                count = 1
+            _apply_operation(
+                EffectOperation(op="search_deck_to_bench", params={"count": count, "descriptor": "matching", "allow_less": True}),
+                state,
+                actor,
+                rng,
+                events,
+            )
+            _apply_operation(EffectOperation(op="shuffle_deck", params={}), state, actor, rng, events)
+            return True
+
+        attach_match = re.match(
+            r"^Search your deck for (?:up to )?(?P<count>\d+|a|an) .+ and attach (?:them|it) to .+\. Then, shuffle your deck\.$",
+            clause,
+            flags=re.IGNORECASE,
+        )
+        if attach_match:
+            count = _parse_count_token(attach_match.group("count"))
+            if count < 0:
+                count = 1
+            _apply_operation(EffectOperation(op="attach_energy", params={"source": "deck", "count": count}), state, actor, rng, events)
+            _apply_operation(EffectOperation(op="shuffle_deck", params={}), state, actor, rng, events)
+            return True
+
+        if clause.lower().startswith("search your deck for"):
+            _apply_operation(EffectOperation(op="shuffle_deck", params={}), state, actor, rng, events)
+            events.append(f"{actor} resolved scripted hook: generic search+shuffle.")
+            return True
+
     if clause:
+        if hook_id == "generic-this-attack-clause":
+            energy_self = re.match(
+                r"^This attack does (?P<amount>\d+) (?P<kind>more )?damage for each \{[A-Z]\} Energy attached to this (?:Pokemon|Pokémon)\.$",
+                clause,
+                flags=re.IGNORECASE,
+            )
+            if energy_self:
+                _apply_operation(
+                    EffectOperation(
+                        op="damage_per_attached_energy",
+                        params={
+                            "target": "self_active",
+                            "amount_per_energy": int(energy_self.group("amount")),
+                            "kind": "bonus" if energy_self.group("kind") else "base",
+                        },
+                    ),
+                    state,
+                    actor,
+                    rng,
+                    events,
+                )
+                return True
+
+            prize_taken = re.match(
+                r"^This attack does (?P<amount>\d+) damage for each Prize card your opponent has taken\.$",
+                clause,
+                flags=re.IGNORECASE,
+            )
+            if prize_taken:
+                _apply_operation(
+                    EffectOperation(
+                        op="damage_per_prize_taken",
+                        params={"target": "opponent_active", "amount_per_prize": int(prize_taken.group("amount")), "kind": "base"},
+                    ),
+                    state,
+                    actor,
+                    rng,
+                    events,
+                )
+                return True
+
+            self_in_play = re.match(
+                r"^This attack does (?P<amount>\d+) damage for each of your .+ in play\.$",
+                clause,
+                flags=re.IGNORECASE,
+            )
+            if self_in_play:
+                _apply_operation(
+                    EffectOperation(
+                        op="damage_per_pokemon_in_play",
+                        params={"target": "opponent_active", "amount_per_pokemon": int(self_in_play.group("amount")), "scope": "self"},
+                    ),
+                    state,
+                    actor,
+                    rng,
+                    events,
+                )
+                return True
+
+            opponent_hand = re.match(
+                r"^This attack does (?P<amount>\d+) damage for each card in your opponent's hand\.$",
+                clause,
+                flags=re.IGNORECASE,
+            )
+            if opponent_hand:
+                total = int(opponent_hand.group("amount")) * int(state["players"][opponent].get("hand_size", 0))
+                _apply_operation(
+                    EffectOperation(op="deal_damage", params={"target": "opponent_active", "amount": total}),
+                    state,
+                    actor,
+                    rng,
+                    events,
+                )
+                return True
+
+            many_targets = re.match(
+                r"^This attack does (?P<amount>\d+) damage to each of (?P<count>\d+) of your opponent's (?:Pokemon|Pokémon)\.$",
+                clause,
+                flags=re.IGNORECASE,
+            )
+            if many_targets:
+                total = int(many_targets.group("amount")) * int(many_targets.group("count"))
+                _apply_operation(
+                    EffectOperation(op="deal_damage", params={"target": "opponent_active", "amount": total}),
+                    state,
+                    actor,
+                    rng,
+                    events,
+                )
+                return True
+
+            per_counter = re.match(
+                r"^This attack does (?P<amount>\d+) more damage for each damage counter on your opponent's Active (?:Pokemon|Pokémon)\.$",
+                clause,
+                flags=re.IGNORECASE,
+            )
+            if per_counter:
+                _apply_operation(
+                    EffectOperation(op="damage_per_target_damage_counter", params={"amount_per_counter": int(per_counter.group("amount"))}),
+                    state,
+                    actor,
+                    rng,
+                    events,
+                )
+                return True
+
+            simple_damage = re.match(r"^This attack does (?P<amount>\d+) damage\.$", clause, flags=re.IGNORECASE)
+            if simple_damage:
+                _apply_operation(
+                    EffectOperation(op="deal_damage", params={"target": "opponent_active", "amount": int(simple_damage.group("amount"))}),
+                    state,
+                    actor,
+                    rng,
+                    events,
+                )
+                return True
+
+        if hook_id == "generic-discard-clause":
+            hand_draw = re.match(r"^Discard your hand and draw (?P<count>\d+) cards\.$", clause, flags=re.IGNORECASE)
+            if hand_draw:
+                state["players"][actor]["hand_size"] = 0
+                _apply_operation(
+                    EffectOperation(op="draw_cards", params={"count": int(hand_draw.group("count"))}),
+                    state,
+                    actor,
+                    rng,
+                    events,
+                )
+                return True
+
+            discard_energy_damage = re.match(
+                r"^Discard any amount of \{[A-Z]\} Energy from among your (?:Pokemon|Pokémon), and this attack does (?P<amount>\d+) damage for each card you discarded in this way\.$",
+                clause,
+                flags=re.IGNORECASE,
+            )
+            if discard_energy_damage:
+                _apply_operation(EffectOperation(op="discard_energy", params={"target": "self_pokemon", "count": -1}), state, actor, rng, events)
+                _apply_operation(
+                    EffectOperation(
+                        op="damage_per_discarded_energy",
+                        params={"target": "opponent_active", "amount_per_energy": int(discard_energy_damage.group("amount")), "kind": "base"},
+                    ),
+                    state,
+                    actor,
+                    rng,
+                    events,
+                )
+                return True
+
         match = re.match(r"^Discard (?P<count>\d+|a|an) cards? from your hand\.$", clause, flags=re.IGNORECASE)
         if match:
             count = _parse_count_token(match.group("count"))

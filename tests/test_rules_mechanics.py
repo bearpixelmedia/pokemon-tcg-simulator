@@ -155,6 +155,56 @@ class RulesMechanicsTests(unittest.TestCase):
         apply_effect_program(program, state, actor="p1")
         self.assertEqual(state["players"]["p1"]["active"]["status"], [])
 
+    def test_script_hook_infers_search_then_shuffle_to_hand(self) -> None:
+        state = create_demo_state()
+        program = EffectProgram(
+            source_text="search+shuffle",
+            operations=[
+                EffectOperation(
+                    op="script_hook",
+                    params={
+                        "hook_id": "search-then-shuffle-generic",
+                        "clause": "Search your deck for up to 2 cards and put them into your hand. Then, shuffle your deck.",
+                    },
+                )
+            ],
+        )
+        apply_effect_program(program, state, actor="p1")
+        self.assertEqual(state["players"]["p1"]["hand_size"], 7)
+
+    def test_script_hook_infers_generic_attack_energy_scaling(self) -> None:
+        state = create_demo_state()
+        state["players"]["p1"]["active"]["energy_attached"] = 3
+        program = EffectProgram(
+            source_text="attack scale",
+            operations=[
+                EffectOperation(
+                    op="script_hook",
+                    params={
+                        "hook_id": "generic-this-attack-clause",
+                        "clause": "This attack does 50 more damage for each {W} Energy attached to this Pokémon.",
+                    },
+                )
+            ],
+        )
+        apply_effect_program(program, state, actor="p1")
+        self.assertEqual(state["players"]["p2"]["active"]["hp"], 0)
+
+    def test_script_hook_infers_discard_hand_and_draw(self) -> None:
+        state = create_demo_state()
+        state["players"]["p1"]["hand_size"] = 6
+        program = EffectProgram(
+            source_text="discard draw",
+            operations=[
+                EffectOperation(
+                    op="script_hook",
+                    params={"hook_id": "generic-discard-clause", "clause": "Discard your hand and draw 5 cards."},
+                )
+            ],
+        )
+        apply_effect_program(program, state, actor="p1")
+        self.assertEqual(state["players"]["p1"]["hand_size"], 5)
+
 
 if __name__ == "__main__":
     unittest.main()
