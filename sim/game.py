@@ -4,6 +4,7 @@ from typing import Any
 
 from core.card_blueprints import build_card_from_blueprint
 from core.data_pipeline import run_pipeline_health_check
+from core.fidelity_audit import run_strict_fidelity_audit
 from core.legality_snapshot import build_standard_legality_snapshot
 from core.quality_gates import run_quality_gates
 from core.standard_coverage import run_standard_coverage_analysis
@@ -172,5 +173,17 @@ def run_data_pipeline_health(
         marks=marks,
         limit_cards=limit_cards,
         write_snapshot=write_snapshot,
+    )
+
+
+def run_fidelity_audit(
+    marks: tuple[str, ...] = ("H", "I", "J"),
+    limit_cards: int | None = 200,
+    manifest_path: str = "artifacts/fidelity/hook_manifest_latest.json",
+) -> dict[str, Any]:
+    return run_strict_fidelity_audit(
+        marks=marks,
+        limit_cards=limit_cards,
+        manifest_path=manifest_path,
     )
 

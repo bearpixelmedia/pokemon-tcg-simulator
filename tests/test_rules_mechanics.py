@@ -1,7 +1,11 @@
 import unittest
+import json
+import tempfile
+from pathlib import Path
 
 from core.effect_types import EffectOperation, EffectProgram
 from core.effects import advance_temporary_rule_durations, apply_effect_program, create_demo_state
+from core.hook_manifest import hook_signature
 from core.rules_mechanics import (
     attempt_devolve,
     attempt_evolve,
@@ -235,7 +239,7 @@ class RulesMechanicsTests(unittest.TestCase):
         apply_effect_program(program, state, actor="p1")
         self.assertEqual(state["players"]["p1"]["hand_size"], 7)
 
-    def test_script_hook_unknown_uses_passthrough_rule(self) -> None:
+    def test_script_hook_unknown_raises_in_strict_mode(self) -> None:
         state = create_demo_state()
         program = EffectProgram(
             source_text="passthrough",
@@ -246,8 +250,26 @@ class RulesMechanicsTests(unittest.TestCase):
                 )
             ],
         )
-        events = apply_effect_program(program, state, actor="p1")
-        self.assertTrue(any("passthrough" in event.lower() for event in events))
+        with self.assertRaises(RuntimeError):
+            apply_effect_program(program, state, actor="p1")
+
+    def test_script_hook_manifest_backed_fallback_is_allowed(self) -> None:
+        state = create_demo_state()
+        hook_id = "unrecognized-hook"
+        clause = "Some new future card text."
+        signature = hook_signature(hook_id, clause)
+        manifest = {"entries": [{"signature": signature, "hook_id": hook_id, "clause": clause}]}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "hook_manifest.json"
+            path.write_text(json.dumps(manifest), encoding="utf-8")
+            state["fidelity_contract"]["manifest_path"] = str(path)
+            program = EffectProgram(
+                source_text="manifest fallback",
+                operations=[EffectOperation(op="script_hook", params={"hook_id": hook_id, "clause": clause})],
+            )
+            events = apply_effect_program(program, state, actor="p1")
+        self.assertTrue(any("manifest-backed fallback" in event for event in events))
 
     def test_pay_cost_operation_updates_turn_flag(self) -> None:
         state = create_demo_state()

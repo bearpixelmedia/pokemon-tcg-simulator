@@ -39,6 +39,16 @@ class TurnEngineTests(unittest.TestCase):
         self.assertIn("setup_events", result)
         self.assertIn("runtime_state_checksum", result["replay"])
 
+    def test_opening_player_turn_one_cannot_attack(self) -> None:
+        result = run_turn_based_simulation(
+            turn_limit=1,
+            seed=41,
+            scripted_actions=[{"action_type": "attack", "blueprint_key": "volatile_strike"}],
+        )
+        first_action = result["replay"]["turn_actions"][0]
+        self.assertEqual(first_action["action_type"], "pass")
+        self.assertIn("forced pass", result["event_log"][0]["phases"][1]["events"][0])
+
     def test_rotating_statuses_do_not_stack(self) -> None:
         state = create_demo_state()
         program = EffectProgram(

@@ -8,6 +8,7 @@ from typing import Any
 
 from core.ai_policy import choose_action_heuristic, generate_legal_actions
 from core.card_blueprints import list_blueprints
+from core.cost_engine import pay_cost
 from core.effect_types import EffectProgram
 from core.effects import (
     advance_temporary_rule_durations,
@@ -15,6 +16,7 @@ from core.effects import (
     apply_pokemon_checkup,
     create_demo_state,
 )
+from core.official_rules import enforce_state_invariants, set_turn_context, validate_action_against_rules
 from core.priority_stack_policy import operations_from_timing_rules
 from core.rules_mechanics import (
     attempt_devolve,
@@ -179,6 +181,7 @@ def run_turn_based_simulation(
     state = create_demo_state()
     timing_bus = TimingBus()
     setup_events = run_setup_phase(state, seed=rng_seed)
+    setup_events.extend(enforce_state_invariants(state))
     event_log: list[dict[str, Any]] = []
     compiled_cards: list[dict[str, Any]] = []
     turn_actions: list[dict[str, Any]] = []
@@ -187,6 +190,7 @@ def run_turn_based_simulation(
         actor = "p1" if turn % 2 == 1 else "p2"
         target = "p2" if actor == "p1" else "p1"
         turn_entry: dict[str, Any] = {"turn": turn, "actor": actor, "phases": []}
+        set_turn_context(state, actor, turn)
 
         reset_turn_flags(state, actor)
         turn_start_events = [f"{actor} started turn {turn}."]
@@ -203,6 +207,16 @@ def run_turn_based_simulation(
         action_type = action.get("action_type", "pass")
         blueprint_key = action.get("blueprint_key")
         variables = action.get("variables", {})
+        action_legal, action_reason = validate_action_against_rules(state, actor, action_type)
+        if not action_legal:
+            action = {
+                "action_type": "pass",
+                "reason": f"forced pass by official rule: {action_reason}",
+                "legal": True,
+            }
+            action_type = "pass"
+            blueprint_key = None
+            variables = {}
         turn_actions.append(
             {
                 "turn": turn,
@@ -247,7 +261,12 @@ def run_turn_based_simulation(
 
             can_attack, before_attack_events = _attack_allowed(state, actor, rng)
             if can_attack:
-                attack_events = apply_effect_program(program, state, actor, rng, timing_bus=timing_bus)
+                cost_result = pay_cost(state, actor, {"active_energy": 1})
+                before_attack_events.extend(cost_result.events)
+                if cost_result.paid:
+                    attack_events = apply_effect_program(program, state, actor, rng, timing_bus=timing_bus)
+                else:
+                    attack_events = [f"{actor}'s attack failed due to unpaid cost."]
             else:
                 attack_events = [f"{actor}'s attack step was skipped due to status restrictions."]
         else:
@@ -271,15 +290,17 @@ def run_turn_based_simulation(
         turn_entry["phases"].append(_phase_events(TurnPhase.BEFORE_ATTACK, before_attack_events))
 
         ko_after_action = resolve_knockouts_and_prizes(state)
-        turn_entry["phases"].append(_phase_events(TurnPhase.ATTACK_RESOLUTION, attack_events + ko_after_action))
+        invariant_events_after_action = enforce_state_invariants(state)
+        turn_entry["phases"].append(_phase_events(TurnPhase.ATTACK_RESOLUTION, attack_events + ko_after_action + invariant_events_after_action))
 
         checkup_events = apply_pokemon_checkup(state, actor, rng)
         opponent_checkup_events = apply_pokemon_checkup(state, target, rng)
         ko_after_checkup = resolve_knockouts_and_prizes(state)
+        invariant_events_after_checkup = enforce_state_invariants(state)
         turn_entry["phases"].append(
             _phase_events(
                 TurnPhase.BETWEEN_TURNS_CHECKUP,
-                checkup_events + opponent_checkup_events + ko_after_checkup,
+                checkup_events + opponent_checkup_events + ko_after_checkup + invariant_events_after_checkup,
             )
         )
 
