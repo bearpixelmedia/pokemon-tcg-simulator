@@ -8,6 +8,7 @@ from typing import Any
 
 from core.ai_policy import choose_action_heuristic, generate_legal_actions
 from core.card_blueprints import list_blueprints
+from core.effect_types import EffectProgram
 from core.effects import apply_effect_program, apply_pokemon_checkup, create_demo_state
 from core.rules_mechanics import (
     attempt_devolve,
@@ -15,7 +16,10 @@ from core.rules_mechanics import (
     attempt_retreat,
     resolve_knockouts_and_prizes,
 )
+from core.setup_engine import run_setup_phase
+from core.state_model import from_demo_state
 from core.text_compiler import compile_effect_text
+from core.timing_windows import TimingBus, TimingEvent, TimingWindow
 from core.trainer_lifecycle import attach_tool, play_stadium, play_supporter, reset_turn_flags
 
 
@@ -135,6 +139,23 @@ def _winner_from_state(state: dict[str, Any]) -> str | None:
     return None
 
 
+def _resolve_timing_window(
+    timing_bus: TimingBus,
+    state: dict[str, Any],
+    actor: str,
+    window: TimingWindow,
+    rng: random.Random,
+    payload: dict[str, Any] | None = None,
+) -> list[str]:
+    event_payload = payload or {}
+    state.setdefault("timing_windows", []).append({"window": window.value, "actor": actor, "payload": event_payload})
+    operations = timing_bus.emit(TimingEvent(window=window, actor=actor, payload=event_payload))
+    if not operations:
+        return []
+    program = EffectProgram(source_text=f"timing:{window.value}", operations=operations)
+    return apply_effect_program(program, state, actor, rng=rng, timing_bus=timing_bus, emit_timing=False)
+
+
 def run_turn_based_simulation(
     turn_limit: int = 10,
     seed: int | None = None,
@@ -143,6 +164,8 @@ def run_turn_based_simulation(
     rng_seed = seed if seed is not None else random.SystemRandom().randint(0, 2**31 - 1)
     rng = random.Random(rng_seed)
     state = create_demo_state()
+    timing_bus = TimingBus()
+    setup_events = run_setup_phase(state, seed=rng_seed)
     event_log: list[dict[str, Any]] = []
     compiled_cards: list[dict[str, Any]] = []
     turn_actions: list[dict[str, Any]] = []
@@ -153,7 +176,9 @@ def run_turn_based_simulation(
         turn_entry: dict[str, Any] = {"turn": turn, "actor": actor, "phases": []}
 
         reset_turn_flags(state, actor)
-        turn_entry["phases"].append(_phase_events(TurnPhase.TURN_START, [f"{actor} started turn {turn}."]))
+        turn_start_events = [f"{actor} started turn {turn}."]
+        turn_start_events.extend(_resolve_timing_window(timing_bus, state, actor, TimingWindow.TURN_START, rng, {"turn": turn}))
+        turn_entry["phases"].append(_phase_events(TurnPhase.TURN_START, turn_start_events))
 
         if scripted_actions and turn - 1 < len(scripted_actions):
             action = _normalize_action_input(dict(scripted_actions[turn - 1]), rng)
@@ -177,7 +202,12 @@ def run_turn_based_simulation(
         turn_entry["phases"].append(
             _phase_events(
                 TurnPhase.ACTION_SELECTION,
-                [f"{actor} selected action '{action_type}' ({blueprint_key}) with variables {variables}."],
+                [
+                    (
+                        f"{actor} selected action '{action_type}' ({blueprint_key}) with variables {variables}. "
+                        f"Reason: {action.get('reason', 'n/a')}"
+                    )
+                ],
             )
         )
 
@@ -204,7 +234,7 @@ def run_turn_based_simulation(
 
             can_attack, before_attack_events = _attack_allowed(state, actor, rng)
             if can_attack:
-                attack_events = apply_effect_program(program, state, actor, rng)
+                attack_events = apply_effect_program(program, state, actor, rng, timing_bus=timing_bus)
             else:
                 attack_events = [f"{actor}'s attack step was skipped due to status restrictions."]
         else:
@@ -240,7 +270,9 @@ def run_turn_based_simulation(
             )
         )
 
-        turn_entry["phases"].append(_phase_events(TurnPhase.TURN_END, [f"{actor} ended turn {turn}."]))
+        turn_end_events = [f"{actor} ended turn {turn}."]
+        turn_end_events.extend(_resolve_timing_window(timing_bus, state, actor, TimingWindow.TURN_END, rng, {"turn": turn}))
+        turn_entry["phases"].append(_phase_events(TurnPhase.TURN_END, turn_end_events))
         turn_entry["hp"] = {
             "you": state["players"]["p1"]["active"]["hp"],
             "ai": state["players"]["p2"]["active"]["hp"],
@@ -266,10 +298,12 @@ def run_turn_based_simulation(
     p1_hp = state["players"]["p1"]["active"]["hp"]
     p2_hp = state["players"]["p2"]["active"]["hp"]
 
+    runtime_state = from_demo_state(state).to_dict()
     return {
         "winner": winner,
         "turns": len(event_log),
         "final_hp": {"you": p1_hp, "ai": p2_hp},
+        "setup_events": setup_events,
         "event_log": event_log,
         "compiled_cards": compiled_cards,
         "available_blueprints": list_blueprints(),
@@ -278,8 +312,9 @@ def run_turn_based_simulation(
             "turn_limit": turn_limit,
             "turn_actions": turn_actions,
             "state_checksum": _state_checksum(state),
+            "runtime_state_checksum": _state_checksum(runtime_state),
             "event_log_checksum": _event_log_checksum(event_log),
-            "engine_version": "phase-machine-v1",
+            "engine_version": "phase-machine-v2-hardening",
         },
     }
 

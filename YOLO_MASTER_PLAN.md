@@ -176,6 +176,11 @@ Exit criteria:
 - [x] Added dedicated tests for all new hardening modules
 - [x] Full unit suite passes
 - [x] Quality gates and data pipeline health checks pass
+- [x] Wired timing windows into live turn/effect runtime
+- [x] Wired setup/mulligan flow into turn simulation bootstrap
+- [x] Wired full legal-action metadata into AI action selection
+- [x] Wired continuous-rule storage/layered damage modifiers into effect execution
+- [x] Wired golden regression suite into quality-gate execution
 
 Exit criteria:
 - No regressions in deterministic replay and text/runtime coverage guarantees.

@@ -13,6 +13,7 @@ class AIPolicyTests(unittest.TestCase):
 
         self.assertIn("attack", action_types)
         self.assertIn("pass", action_types)
+        self.assertTrue(all("legal" in action and "reason" in action for action in actions))
 
     def test_generate_legal_actions_blocks_retreat_when_asleep(self) -> None:
         state = create_demo_state()
@@ -29,6 +30,19 @@ class AIPolicyTests(unittest.TestCase):
 
         self.assertEqual(selected["action_type"], "attack")
         self.assertEqual(selected["blueprint_key"], "volatile_strike")
+
+    def test_heuristic_ignores_illegal_actions(self) -> None:
+        state = create_demo_state()
+        selected = choose_action_heuristic(
+            state,
+            "p1",
+            actions=[
+                {"action_type": "attack", "blueprint_key": "volatile_strike", "legal": False, "reason": "blocked"},
+                {"action_type": "pass", "legal": True, "reason": "always legal"},
+            ],
+            rng=random.Random(7),
+        )
+        self.assertEqual(selected["action_type"], "pass")
 
 
 if __name__ == "__main__":

@@ -5,12 +5,14 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from core.golden_regression import run_golden_suite
 from core.legality_snapshot import build_standard_legality_snapshot
 from core.standard_coverage import run_standard_coverage_analysis
 from core.turn_engine import verify_seed_replay
 
 DEFAULT_BASELINE_PATH = Path("artifacts/quality/coverage_baseline.json")
 DEFAULT_DASHBOARD_PATH = Path("artifacts/quality/coverage_dashboard.html")
+DEFAULT_GOLDEN_SUITE_PATH = Path("tests/fixtures/golden_suite.json")
 
 
 def _load_json(path: Path) -> dict[str, Any] | None:
@@ -69,6 +71,7 @@ def run_quality_gates(
     legality_limit_cards: int | None = 300,
     marks: tuple[str, ...] = ("H", "I", "J"),
     baseline_path: str | Path = DEFAULT_BASELINE_PATH,
+    golden_suite_path: str | Path | None = DEFAULT_GOLDEN_SUITE_PATH,
     min_replay_checks: int = 3,
     update_baseline: bool = False,
     force_refresh: bool = False,
@@ -87,6 +90,21 @@ def run_quality_gates(
 
     replay_results = [verify_seed_replay(turn_limit=8, seed=seed) for seed in (101, 202, 303)[:min_replay_checks]]
     replay_pass = all(result["deterministic"] for result in replay_results)
+
+    golden_report: dict[str, Any] | None = None
+    golden_pass = True
+    if golden_suite_path is not None:
+        suite_path = Path(golden_suite_path)
+        if suite_path.exists():
+            suite_result = run_golden_suite(str(suite_path))
+            golden_report = {
+                "path": str(suite_path),
+                "count": int(suite_result.get("count", 0)),
+                "executed": True,
+            }
+            golden_pass = int(suite_result.get("count", 0)) > 0
+        else:
+            golden_report = {"path": str(suite_path), "count": 0, "executed": False}
 
     baseline = _load_json(baseline_file)
     current_resolution = float(coverage.get("summary", {}).get("text_resolution_percent", 0))
@@ -108,12 +126,13 @@ def run_quality_gates(
             },
         )
 
-    quality_pass = bool(replay_pass and not regression)
+    quality_pass = bool(replay_pass and golden_pass and not regression)
     payload = {
         "quality_pass": quality_pass,
         "coverage": coverage.get("summary", {}),
         "legality": legality.get("summary", {}),
         "replay_checks": replay_results,
+        "golden_regression": golden_report,
         "baseline": {
             "path": str(baseline_file),
             "exists": baseline is not None,

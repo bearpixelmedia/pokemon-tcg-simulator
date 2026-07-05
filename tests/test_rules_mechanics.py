@@ -250,6 +250,31 @@ class RulesMechanicsTests(unittest.TestCase):
         events = apply_effect_program(program, state, actor="p1")
         self.assertTrue(any("passthrough" in event.lower() for event in events))
 
+    def test_pay_cost_operation_updates_turn_flag(self) -> None:
+        state = create_demo_state()
+        program = EffectProgram(
+            source_text="pay cost",
+            operations=[EffectOperation(op="pay_cost", params={"requirements": {"hand_cards": 1}})],
+        )
+        events = apply_effect_program(program, state, actor="p1")
+        self.assertTrue(any("Cost payment succeeded" in event for event in events))
+        self.assertTrue(state["players"]["p1"]["turn_flags"]["last_cost_paid"])
+
+    def test_temporary_rule_damage_modifier_is_applied(self) -> None:
+        state = create_demo_state()
+        program = EffectProgram(
+            source_text="temporary modifier",
+            operations=[
+                EffectOperation(
+                    op="apply_temporary_rule",
+                    params={"rule": "bonus", "layer": "DAMAGE_MODIFIER", "modifiers": {"damage": 20}},
+                ),
+                EffectOperation(op="deal_damage", params={"target": "opponent_active", "amount": 30}),
+            ],
+        )
+        apply_effect_program(program, state, actor="p1")
+        self.assertEqual(state["players"]["p2"]["active"]["hp"], 70)
+
 
 if __name__ == "__main__":
     unittest.main()

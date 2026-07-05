@@ -34,6 +34,11 @@ class TurnEngineTests(unittest.TestCase):
         report = verify_seed_replay(turn_limit=4, seed=27)
         self.assertTrue(report["deterministic"])
 
+    def test_simulation_includes_setup_and_runtime_checksum(self) -> None:
+        result = run_turn_based_simulation(turn_limit=2, seed=19)
+        self.assertIn("setup_events", result)
+        self.assertIn("runtime_state_checksum", result["replay"])
+
     def test_rotating_statuses_do_not_stack(self) -> None:
         state = create_demo_state()
         program = EffectProgram(

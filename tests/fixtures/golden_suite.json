@@ -1,0 +1,29 @@
+{
+  "cases": [
+    {
+      "name": "golden-simple-damage",
+      "actor": "p1",
+      "operations": [
+        {
+          "op": "deal_damage",
+          "params": {
+            "target": "opponent_active",
+            "amount": 20
+          }
+        }
+      ]
+    },
+    {
+      "name": "golden-draw",
+      "actor": "p1",
+      "operations": [
+        {
+          "op": "draw_cards",
+          "params": {
+            "count": 1
+          }
+        }
+      ]
+    }
+  ]
+}

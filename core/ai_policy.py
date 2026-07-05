@@ -4,6 +4,7 @@ import random
 from typing import Any
 
 from core.card_blueprints import list_blueprints
+from core.legal_actions_full import generate_legal_actions_full
 from core.trainer_lifecycle import can_attach_tool, can_play_stadium, can_play_supporter
 
 
@@ -50,7 +51,19 @@ def generate_legal_actions(state: dict[str, Any], actor: str) -> list[dict[str, 
     if can_tool:
         actions.append({"action_type": "attach_tool"})
 
-    return actions
+    full_surface = generate_legal_actions_full(state, actor)
+    full_by_type = {entry["action_type"]: entry for entry in full_surface}
+    enriched_actions: list[dict[str, Any]] = []
+    for action in actions:
+        metadata = full_by_type.get(action["action_type"], {})
+        enriched_actions.append(
+            {
+                **action,
+                "legal": bool(metadata.get("legal", True)),
+                "reason": str(metadata.get("reason", "legacy action check")),
+            }
+        )
+    return enriched_actions
 
 
 def choose_action_heuristic(
@@ -59,19 +72,23 @@ def choose_action_heuristic(
     actions: list[dict[str, Any]],
     rng: random.Random,
 ) -> dict[str, Any]:
+    legal_actions = [action for action in actions if action.get("legal", True)]
+    if not legal_actions:
+        return {"action_type": "pass", "legal": True, "reason": "fallback when all actions illegal"}
+
     player = state["players"][actor]
     opponent = state["players"]["p2" if actor == "p1" else "p1"]
     hp = int(player["active"].get("hp", 0))
     opponent_hp = int(opponent["active"].get("hp", 0))
     stage = player["active"].get("stage", "Basic")
 
-    retreat_action = next((action for action in actions if action["action_type"] == "retreat"), None)
-    evolve_action = next((action for action in actions if action["action_type"] == "evolve"), None)
-    supporter_action = next((action for action in actions if action["action_type"] == "play_supporter"), None)
-    stadium_action = next((action for action in actions if action["action_type"] == "play_stadium"), None)
-    tool_action = next((action for action in actions if action["action_type"] == "attach_tool"), None)
+    retreat_action = next((action for action in legal_actions if action["action_type"] == "retreat"), None)
+    evolve_action = next((action for action in legal_actions if action["action_type"] == "evolve"), None)
+    supporter_action = next((action for action in legal_actions if action["action_type"] == "play_supporter"), None)
+    stadium_action = next((action for action in legal_actions if action["action_type"] == "play_stadium"), None)
+    tool_action = next((action for action in legal_actions if action["action_type"] == "attach_tool"), None)
 
-    attack_actions = [action for action in actions if action["action_type"] == "attack"]
+    attack_actions = [action for action in legal_actions if action["action_type"] == "attack"]
     if attack_actions:
         attack_actions.sort(
             key=lambda action: _estimate_attack_damage(action["blueprint_key"]),
@@ -112,5 +129,5 @@ def choose_action_heuristic(
         ]
         return rng.choice(top_options)
 
-    return {"action_type": "pass"}
+    return {"action_type": "pass", "legal": True, "reason": "no stronger legal option"}
 

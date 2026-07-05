@@ -4,14 +4,20 @@ import re
 import random
 from typing import Any
 
+from core.cost_engine import pay_cost
+from core.effect_layers import ContinuousRule, ContinuousRuleEngine, EffectLayer
 from core.effect_types import EffectOperation, EffectProgram
 from core.rules_mechanics import create_active_pokemon
+from core.targeting import validate_target_selector
+from core.timing_windows import TimingBus, TimingEvent, TimingWindow
 _ROTATING_STATUSES = {"Asleep", "Confused", "Paralyzed"}
 
 
 def create_demo_state() -> dict[str, Any]:
     return {
         "board": {"stadium": None},
+        "continuous_rules": [],
+        "timing_windows": [],
         "players": {
             "p1": {
                 "name": "You",
@@ -46,13 +52,17 @@ def _opponent(actor: str) -> str:
 
 
 def _target_slot(state: dict[str, Any], actor: str, target: str) -> dict[str, Any]:
+    validation = validate_target_selector(state, actor, target)
+    if not validation.valid and "unsupported selector" in validation.reason:
+        raise ValueError(f"Unsupported target '{target}' for demo engine")
+
     if target in {"self_active", "self_pokemon", "self_bench", "self_other"}:
         return state["players"][actor]["active"]
     if target in {"opponent_active", "opponent_any_pokemon"}:
         return state["players"][_opponent(actor)]["active"]
     if target == "opponent_bench":
         return state["players"][_opponent(actor)]["active"]
-    raise ValueError(f"Unsupported target '{target}' for demo engine")
+    return state["players"][actor]["active"]
 
 
 def _coerce_operation(operation: EffectOperation | dict[str, Any]) -> EffectOperation:
@@ -95,6 +105,39 @@ def _rule_key_from_clause(clause: str, fallback: str = "script_clause_rule") -> 
     if not key:
         return fallback
     return key[:96]
+
+
+def _coerce_layer(layer: str | int | None) -> EffectLayer:
+    if isinstance(layer, int):
+        try:
+            return EffectLayer(layer)
+        except ValueError:
+            return EffectLayer.MISC
+    if isinstance(layer, str):
+        normalized = layer.strip().upper()
+        if normalized in EffectLayer.__members__:
+            return EffectLayer[normalized]
+    return EffectLayer.MISC
+
+
+def _resolve_layered_damage(state: dict[str, Any], base_amount: int) -> int:
+    engine = ContinuousRuleEngine()
+    for index, entry in enumerate(state.get("continuous_rules", [])):
+        modifiers = entry.get("modifiers", {})
+        if not isinstance(modifiers, dict):
+            continue
+        if "damage" not in modifiers:
+            continue
+        engine.add_rule(
+            ContinuousRule(
+                source=str(entry.get("source", f"rule-{index}")),
+                layer=EffectLayer.DAMAGE_MODIFIER,
+                priority=int(entry.get("priority", index)),
+                rule={"damage": int(modifiers.get("damage", 0))},
+            )
+        )
+    resolved = engine.resolve({"damage": base_amount})
+    return max(0, int(resolved.get("damage", base_amount)))
 
 
 def _apply_script_hook_inference(
@@ -699,11 +742,22 @@ def apply_effect_program(
     state: dict[str, Any],
     actor: str,
     rng: random.Random | None = None,
+    timing_bus: TimingBus | None = None,
+    emit_timing: bool = True,
 ) -> list[str]:
     rng = rng or random.Random()
     events: list[str] = []
+    bus = timing_bus or TimingBus()
+    if emit_timing:
+        pre_ops = bus.emit(TimingEvent(window=TimingWindow.BEFORE_ATTACK, actor=actor, payload={"source_text": program.source_text}))
+        for operation in pre_ops:
+            _apply_operation(operation, state, actor, rng, events)
     for operation in program.operations:
         _apply_operation(operation, state, actor, rng, events)
+    if emit_timing:
+        post_ops = bus.emit(TimingEvent(window=TimingWindow.AFTER_ATTACK, actor=actor, payload={"source_text": program.source_text}))
+        for operation in post_ops:
+            _apply_operation(operation, state, actor, rng, events)
     return events
 
 
@@ -718,7 +772,7 @@ def _apply_operation(
 
     if normalized.op == "deal_damage":
         slot = _target_slot(state, actor, normalized.params["target"])
-        amount = int(normalized.params["amount"])
+        amount = _resolve_layered_damage(state, int(normalized.params["amount"]))
         if int(slot.get("prevent_all_damage_turns_remaining", 0)) > 0:
             events.append(
                 f"{actor}'s damage was prevented on {normalized.params['target']}."
@@ -1084,12 +1138,39 @@ def _apply_operation(
         events.append(f"{actor} flipped {heads}/{coin_count} heads.")
         return
 
+    if normalized.op == "pay_cost":
+        requirements = normalized.params.get("requirements", {})
+        if not isinstance(requirements, dict):
+            requirements = {}
+        result = pay_cost(state, actor, requirements)
+        events.extend(result.events)
+        state["players"][actor].setdefault("turn_flags", {})["last_cost_paid"] = result.paid
+        return
+
+    if normalized.op == "apply_temporary_rule":
+        params = dict(normalized.params)
+        modifiers = params.get("modifiers", {})
+        if not modifiers and "amount_delta" in params:
+            modifiers = {"damage": int(params.get("amount_delta", 0))}
+        state.setdefault("continuous_rules", []).append(
+            {
+                "source": str(params.get("rule", "temporary_rule")),
+                "hook_id": params.get("hook_id"),
+                "clause": params.get("clause"),
+                "target": params.get("target", "self_player"),
+                "priority": int(params.get("priority", 100)),
+                "layer": int(_coerce_layer(params.get("layer"))),
+                "modifiers": modifiers if isinstance(modifiers, dict) else {},
+            }
+        )
+        events.append(f"{actor} prepared effect: {normalized.op}.")
+        return
+
     if normalized.op in {
         "ignore_weakness_resistance",
         "ignore_defending_effects",
         "ignore_weakness_resistance_and_effects_on_targets",
         "ignore_resistance",
-        "apply_temporary_rule",
         "select_opponent_bench",
         "choose_attack",
         "annotation_noop",
