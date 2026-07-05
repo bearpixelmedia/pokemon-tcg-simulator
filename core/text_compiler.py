@@ -59,6 +59,12 @@ def _damage_to_self(match: re.Match[str]) -> list[EffectOperation]:
     ]
 
 
+def _damage_to_self_also(match: re.Match[str]) -> list[EffectOperation]:
+    return [
+        EffectOperation(op="deal_damage", params={"target": "self_active", "amount": int(match.group("damage"))})
+    ]
+
+
 def _bonus_damage_to_active(match: re.Match[str]) -> list[EffectOperation]:
     return [
         EffectOperation(
@@ -93,6 +99,11 @@ def _draw_cards(match: re.Match[str]) -> list[EffectOperation]:
             params={"target": "self_player", "count": int(match.group("count"))},
         )
     ]
+
+
+def _draw_one_card(match: re.Match[str]) -> list[EffectOperation]:
+    _ = match
+    return [EffectOperation(op="draw_cards", params={"target": "self_player", "count": 1})]
 
 
 def _draw_until_hand_size(match: re.Match[str]) -> list[EffectOperation]:
@@ -179,6 +190,42 @@ def _switch_opponent_active(match: re.Match[str]) -> list[EffectOperation]:
     return [EffectOperation(op="switch_active_with_bench", params={"target": "opponent_player"})]
 
 
+def _search_deck_to_bench_multi(match: re.Match[str]) -> list[EffectOperation]:
+    return [
+        EffectOperation(
+            op="search_deck_to_bench",
+            params={
+                "count": int(match.group("count")),
+                "descriptor": normalize_card_text(match.group("descriptor")),
+                "allow_less": True,
+            },
+        ),
+        EffectOperation(op="shuffle_deck", params={"target": "self_player"}),
+    ]
+
+
+def _search_deck_to_bench_single(match: re.Match[str]) -> list[EffectOperation]:
+    descriptor = normalize_card_text(match.group("descriptor"))
+    return [
+        EffectOperation(
+            op="search_deck_to_bench",
+            params={"count": 1, "descriptor": descriptor, "allow_less": False},
+        ),
+        EffectOperation(op="shuffle_deck", params={"target": "self_player"}),
+    ]
+
+
+def _search_deck_pokemon_to_hand_single(match: re.Match[str]) -> list[EffectOperation]:
+    _ = match
+    return [
+        EffectOperation(
+            op="search_deck_to_hand",
+            params={"count": 1, "descriptor": "Pokémon", "reveal": True},
+        ),
+        EffectOperation(op="shuffle_deck", params={"target": "self_player"}),
+    ]
+
+
 def _discard_energy_from_self(match: re.Match[str]) -> list[EffectOperation]:
     return [
         EffectOperation(
@@ -186,6 +233,11 @@ def _discard_energy_from_self(match: re.Match[str]) -> list[EffectOperation]:
             params={"target": "self_active", "count": _coerce_count(match.group("count"))},
         )
     ]
+
+
+def _discard_energy_from_opponent(match: re.Match[str]) -> list[EffectOperation]:
+    _ = match
+    return [EffectOperation(op="discard_energy", params={"target": "opponent_active", "count": 1})]
 
 
 def _attach_energy_from_hand(match: re.Match[str]) -> list[EffectOperation]:
@@ -233,9 +285,56 @@ def _prevent_damage_next_turn(match: re.Match[str]) -> list[EffectOperation]:
     ]
 
 
+def _prevent_damage_flat(match: re.Match[str]) -> list[EffectOperation]:
+    return [
+        EffectOperation(
+            op="modify_incoming_damage_next_turn",
+            params={"target": "self_active", "amount": int(match.group("amount"))},
+        )
+    ]
+
+
+def _prevent_all_damage_and_effects_next_turn(match: re.Match[str]) -> list[EffectOperation]:
+    _ = match
+    return [
+        EffectOperation(
+            op="script_hook",
+            params={"hook_id": "prevent-all-damage-next-turn", "target": "self_active"},
+        )
+    ]
+
+
+def _defending_cannot_retreat_next_turn(match: re.Match[str]) -> list[EffectOperation]:
+    _ = match
+    return [
+        EffectOperation(
+            op="apply_temporary_rule",
+            params={"target": "opponent_active", "rule": "cannot_retreat_next_turn"},
+        )
+    ]
+
+
 def _no_weakness_resistance(match: re.Match[str]) -> list[EffectOperation]:
     _ = match
     return [EffectOperation(op="ignore_weakness_resistance", params={"target": "attack"})]
+
+
+def _ignore_damage_effects_on_opponent_active(match: re.Match[str]) -> list[EffectOperation]:
+    _ = match
+    return [EffectOperation(op="ignore_defending_effects", params={"target": "opponent_active"})]
+
+
+def _ignore_resistance(match: re.Match[str]) -> list[EffectOperation]:
+    _ = match
+    return [EffectOperation(op="ignore_resistance", params={"target": "attack"})]
+
+
+def _ignore_weakness_resistance_and_effects(match: re.Match[str]) -> list[EffectOperation]:
+    _ = match
+    return [
+        EffectOperation(op="ignore_weakness_resistance", params={"target": "attack"}),
+        EffectOperation(op="ignore_defending_effects", params={"target": "opponent_active"}),
+    ]
 
 
 def _cannot_attack_next_turn(match: re.Match[str]) -> list[EffectOperation]:
@@ -246,6 +345,113 @@ def _cannot_attack_next_turn(match: re.Match[str]) -> list[EffectOperation]:
             params={"target": "self_active", "rule": "cannot_attack_next_turn"},
         )
     ]
+
+
+def _defending_cannot_attack_next_turn(match: re.Match[str]) -> list[EffectOperation]:
+    _ = match
+    return [
+        EffectOperation(
+            op="apply_temporary_rule",
+            params={"target": "opponent_active", "rule": "cannot_attack_next_turn"},
+        )
+    ]
+
+
+def _discard_tools_from_opponent_active(match: re.Match[str]) -> list[EffectOperation]:
+    _ = match
+    return [EffectOperation(op="discard_tools", params={"target": "opponent_active", "count": -1})]
+
+
+def _damage_per_self_counter(match: re.Match[str]) -> list[EffectOperation]:
+    return [
+        EffectOperation(
+            op="damage_per_self_damage_counter",
+            params={"target": "opponent_active", "amount_per_counter": int(match.group("damage"))},
+        )
+    ]
+
+
+def _turn_damage_bonus_to_active(match: re.Match[str]) -> list[EffectOperation]:
+    return [
+        EffectOperation(
+            op="apply_temporary_rule",
+            params={
+                "target": "self_player",
+                "rule": "attacks_bonus_damage_this_turn",
+                "amount": int(match.group("amount")),
+            },
+        )
+    ]
+
+
+def _ability_once_per_turn_note(match: re.Match[str]) -> list[EffectOperation]:
+    _ = match
+    return [EffectOperation(op="annotation_noop", params={})]
+
+
+def _item_lock_next_turn(match: re.Match[str]) -> list[EffectOperation]:
+    _ = match
+    return [
+        EffectOperation(
+            op="apply_temporary_rule",
+            params={"target": "opponent_player", "rule": "cannot_play_item_cards_next_turn"},
+        )
+    ]
+
+
+def _attack_does_nothing(match: re.Match[str]) -> list[EffectOperation]:
+    _ = match
+    return [EffectOperation(op="annotation_noop", params={})]
+
+
+def _move_energy_to_bench(match: re.Match[str]) -> list[EffectOperation]:
+    return [
+        EffectOperation(
+            op="move_energy",
+            params={
+                "source": "self_active",
+                "target": "self_bench",
+                "count": int(match.group("count")),
+            },
+        )
+    ]
+
+
+def _discard_random_opponent_hand(match: re.Match[str]) -> list[EffectOperation]:
+    _ = match
+    return [EffectOperation(op="discard_random_card", params={"target": "opponent_hand", "count": 1})]
+
+
+def _discard_top_opponent_deck(match: re.Match[str]) -> list[EffectOperation]:
+    _ = match
+    return [EffectOperation(op="mill_top_deck", params={"target": "opponent_deck", "count": 1})]
+
+
+def _coin_damage_for_heads(match: re.Match[str]) -> list[EffectOperation]:
+    return [
+        EffectOperation(
+            op="flip_coins_for_damage",
+            params={
+                "coin_count": int(match.group("coins")),
+                "damage_per_heads": int(match.group("damage")),
+            },
+        )
+    ]
+
+
+def _prevent_that_damage(match: re.Match[str]) -> list[EffectOperation]:
+    _ = match
+    return [EffectOperation(op="apply_temporary_rule", params={"target": "self_active", "rule": "prevent_that_damage"})]
+
+
+def _flip_coin_only(match: re.Match[str]) -> list[EffectOperation]:
+    _ = match
+    return [EffectOperation(op="flip_coin", params={"heads": [], "tails": []})]
+
+
+def _parenthetical_noop(match: re.Match[str]) -> list[EffectOperation]:
+    _ = match
+    return [EffectOperation(op="annotation_noop", params={})]
 
 
 CLAUSE_TEMPLATES: list[TextTemplate] = [
@@ -268,6 +474,15 @@ CLAUSE_TEMPLATES: list[TextTemplate] = [
         builder=_damage_to_active,
     ),
     TextTemplate(
+        name="damage_self_also",
+        description="Deal fixed recoil damage to this Pokémon.",
+        pattern=re.compile(
+            rf"^This {_POKEMON_TOKEN} also does (?P<damage>\d+) damage to itself\.$",
+            re.IGNORECASE,
+        ),
+        builder=_damage_to_self_also,
+    ),
+    TextTemplate(
         name="damage_self",
         description="Deal fixed damage to your own Active Pokémon.",
         pattern=re.compile(
@@ -280,7 +495,7 @@ CLAUSE_TEMPLATES: list[TextTemplate] = [
         name="damage_bench",
         description="Deal fixed damage to one or more Benched Pokémon.",
         pattern=re.compile(
-            rf"^This attack does (?P<damage>\d+) damage to (?:(?P<count>\d+) of your opponent's Benched {_POKEMON_TOKEN}|1 of your opponent's Benched {_POKEMON_TOKEN}|that {_POKEMON_TOKEN})\.$",
+            rf"^This attack (?:also )?does (?P<damage>\d+) damage to (?:(?P<count>\d+) of your opponent's Benched {_POKEMON_TOKEN}|1 of your opponent's Benched {_POKEMON_TOKEN}|that {_POKEMON_TOKEN})\.$",
             re.IGNORECASE,
         ),
         builder=_damage_to_bench,
@@ -290,6 +505,12 @@ CLAUSE_TEMPLATES: list[TextTemplate] = [
         description="Draw a fixed number of cards.",
         pattern=re.compile(r"^Draw (?P<count>\d+) cards?\.$", re.IGNORECASE),
         builder=_draw_cards,
+    ),
+    TextTemplate(
+        name="draw_one_card",
+        description="Draw one card.",
+        pattern=re.compile(r"^Draw (?:a|an) card\.$", re.IGNORECASE),
+        builder=_draw_one_card,
     ),
     TextTemplate(
         name="draw_until_hand_size",
@@ -352,6 +573,33 @@ CLAUSE_TEMPLATES: list[TextTemplate] = [
         builder=_search_deck_to_hand_multi,
     ),
     TextTemplate(
+        name="search_deck_to_bench_multi",
+        description="Search deck for up to N cards and put them onto your Bench.",
+        pattern=re.compile(
+            rf"^Search your deck for up to (?P<count>\d+) (?P<descriptor>.+?) and put them onto your Bench\. Then, shuffle your deck\.$",
+            re.IGNORECASE,
+        ),
+        builder=_search_deck_to_bench_multi,
+    ),
+    TextTemplate(
+        name="search_deck_to_bench_single",
+        description="Search deck for one card and put it onto your Bench.",
+        pattern=re.compile(
+            rf"^Search your deck for (?:a|an) (?P<descriptor>.+?) and put it onto your Bench\. Then, shuffle your deck\.$",
+            re.IGNORECASE,
+        ),
+        builder=_search_deck_to_bench_single,
+    ),
+    TextTemplate(
+        name="search_deck_pokemon_to_hand_single",
+        description="Search deck for a Pokémon and put it into your hand.",
+        pattern=re.compile(
+            rf"^Search your deck for a {_POKEMON_TOKEN}, reveal it, and put it into your hand\. Then, shuffle your deck\.$",
+            re.IGNORECASE,
+        ),
+        builder=_search_deck_pokemon_to_hand_single,
+    ),
+    TextTemplate(
         name="shuffle_deck",
         description="Shuffle your deck.",
         pattern=re.compile(r"^Shuffle your deck\.$", re.IGNORECASE),
@@ -361,10 +609,28 @@ CLAUSE_TEMPLATES: list[TextTemplate] = [
         name="switch_self_active",
         description="Switch your Active Pokémon with one of your Benched Pokémon.",
         pattern=re.compile(
-            rf"^Switch your Active {_POKEMON_TOKEN} with 1 of your Benched {_POKEMON_TOKEN}\.$",
+            rf"^Switch (?:your Active {_POKEMON_TOKEN}|this {_POKEMON_TOKEN}) with 1 of your Benched {_POKEMON_TOKEN}\.$",
             re.IGNORECASE,
         ),
         builder=_switch_self_active,
+    ),
+    TextTemplate(
+        name="switch_opponent_active_out",
+        description="Switch out your opponent's Active Pokémon to the Bench.",
+        pattern=re.compile(
+            rf"^Switch out your opponent's Active {_POKEMON_TOKEN} to the Bench\.$",
+            re.IGNORECASE,
+        ),
+        builder=_switch_opponent_active,
+    ),
+    TextTemplate(
+        name="switch_in_opponent_bench",
+        description="Switch in one of your opponent's Benched Pokémon to Active Spot.",
+        pattern=re.compile(
+            rf"^Switch in 1 of your opponent's Benched {_POKEMON_TOKEN} to the Active Spot\.$",
+            re.IGNORECASE,
+        ),
+        builder=_switch_opponent_active,
     ),
     TextTemplate(
         name="switch_opponent_active",
@@ -383,6 +649,15 @@ CLAUSE_TEMPLATES: list[TextTemplate] = [
             re.IGNORECASE,
         ),
         builder=_discard_energy_from_self,
+    ),
+    TextTemplate(
+        name="discard_energy_opponent_active",
+        description="Discard one Energy from opponent Active Pokémon.",
+        pattern=re.compile(
+            rf"^Discard an Energy from your opponent's Active {_POKEMON_TOKEN}\.$",
+            re.IGNORECASE,
+        ),
+        builder=_discard_energy_from_opponent,
     ),
     TextTemplate(
         name="attach_energy_from_hand",
@@ -415,10 +690,37 @@ CLAUSE_TEMPLATES: list[TextTemplate] = [
         name="prevent_damage_next_turn",
         description="Apply next-turn incoming damage reduction.",
         pattern=re.compile(
-            rf"^During your opponent's next turn, this {_POKEMON_TOKEN} takes (?P<amount>\d+) less damage from attacks\.$",
+            rf"^During your opponent's next turn, this {_POKEMON_TOKEN} takes (?P<amount>\d+) less damage from attacks(?: \(after applying Weakness and Resistance\))?\.$",
             re.IGNORECASE,
         ),
         builder=_prevent_damage_next_turn,
+    ),
+    TextTemplate(
+        name="prevent_damage_flat",
+        description="Apply damage reduction without explicit next-turn timing sentence.",
+        pattern=re.compile(
+            rf"^This {_POKEMON_TOKEN} takes (?P<amount>\d+) less damage from attacks \(after applying Weakness and Resistance\)\.$",
+            re.IGNORECASE,
+        ),
+        builder=_prevent_damage_flat,
+    ),
+    TextTemplate(
+        name="prevent_all_damage_and_effects_next_turn",
+        description="Prevent all damage and attack effects next opponent turn.",
+        pattern=re.compile(
+            rf"^During your opponent's next turn, prevent all damage from and effects of attacks done to this {_POKEMON_TOKEN}\.$",
+            re.IGNORECASE,
+        ),
+        builder=_prevent_all_damage_and_effects_next_turn,
+    ),
+    TextTemplate(
+        name="defending_cannot_retreat_next_turn",
+        description="Defending or affected Pokémon cannot retreat next turn.",
+        pattern=re.compile(
+            rf"^During your opponent's next turn, (?:the Defending {_POKEMON_TOKEN}|that {_POKEMON_TOKEN}) can't retreat\.$",
+            re.IGNORECASE,
+        ),
+        builder=_defending_cannot_retreat_next_turn,
     ),
     TextTemplate(
         name="ignore_weakness_resistance",
@@ -430,18 +732,169 @@ CLAUSE_TEMPLATES: list[TextTemplate] = [
         builder=_no_weakness_resistance,
     ),
     TextTemplate(
+        name="ignore_opponent_active_effects",
+        description="Ignore effects on opponent Active Pokémon for this attack.",
+        pattern=re.compile(
+            rf"^This attack's damage isn't affected by any effects on your opponent's Active {_POKEMON_TOKEN}\.$",
+            re.IGNORECASE,
+        ),
+        builder=_ignore_damage_effects_on_opponent_active,
+    ),
+    TextTemplate(
+        name="ignore_weakness_resistance_and_effects",
+        description="Ignore Weakness, Resistance, and effects on opponent Active.",
+        pattern=re.compile(
+            rf"^This attack's damage isn't affected by Weakness or Resistance, or by any effects on your opponent's Active {_POKEMON_TOKEN}\.$",
+            re.IGNORECASE,
+        ),
+        builder=_ignore_weakness_resistance_and_effects,
+    ),
+    TextTemplate(
+        name="ignore_resistance_only",
+        description="Ignore Resistance for this attack.",
+        pattern=re.compile(
+            r"^This attack's damage isn't affected by Resistance\.$",
+            re.IGNORECASE,
+        ),
+        builder=_ignore_resistance,
+    ),
+    TextTemplate(
         name="cannot_attack_next_turn",
         description="This Pokémon cannot attack during your next turn.",
         pattern=re.compile(
-            rf"^During your next turn, this {_POKEMON_TOKEN} can't attack\.$",
+            rf"^During your next turn, this {_POKEMON_TOKEN} can't (?:attack|use attacks|use .+)\.$",
             re.IGNORECASE,
         ),
         builder=_cannot_attack_next_turn,
+    ),
+    TextTemplate(
+        name="defending_cannot_attack_next_turn",
+        description="Defending Pokémon cannot use attacks next turn.",
+        pattern=re.compile(
+            rf"^During your opponent's next turn, the Defending {_POKEMON_TOKEN} can't use attacks\.$",
+            re.IGNORECASE,
+        ),
+        builder=_defending_cannot_attack_next_turn,
+    ),
+    TextTemplate(
+        name="discard_tools_from_opponent_active",
+        description="Discard all Pokémon Tools from opponent Active Pokémon.",
+        pattern=re.compile(
+            rf"^Before doing damage, discard all {_POKEMON_TOKEN} Tools from your opponent's Active {_POKEMON_TOKEN}\.$",
+            re.IGNORECASE,
+        ),
+        builder=_discard_tools_from_opponent_active,
+    ),
+    TextTemplate(
+        name="damage_per_self_counter",
+        description="Deal damage for each damage counter on this Pokémon.",
+        pattern=re.compile(
+            rf"^This attack does (?P<damage>\d+) damage for each damage counter on this {_POKEMON_TOKEN}\.$",
+            re.IGNORECASE,
+        ),
+        builder=_damage_per_self_counter,
+    ),
+    TextTemplate(
+        name="turn_damage_bonus_to_active",
+        description="Apply a temporary damage bonus for this turn's attacks.",
+        pattern=re.compile(
+            rf"^During this turn, attacks used by your {_POKEMON_TOKEN} do (?P<amount>\d+) more damage to your opponent's Active {_POKEMON_TOKEN} ex \(before applying Weakness and Resistance\)\.$",
+            re.IGNORECASE,
+        ),
+        builder=_turn_damage_bonus_to_active,
+    ),
+    TextTemplate(
+        name="ability_once_per_turn_note",
+        description="Ability reminder text for once during your turn.",
+        pattern=re.compile(
+            r"^Once during your turn, you may use this Ability\.$",
+            re.IGNORECASE,
+        ),
+        builder=_ability_once_per_turn_note,
+    ),
+    TextTemplate(
+        name="item_lock_next_turn",
+        description="Opponent cannot play Item cards during next turn.",
+        pattern=re.compile(
+            r"^During your opponent's next turn, they can't play any Item cards from their hand\.$",
+            re.IGNORECASE,
+        ),
+        builder=_item_lock_next_turn,
+    ),
+    TextTemplate(
+        name="prevent_that_damage",
+        description="Prevent that damage on a conditional branch.",
+        pattern=re.compile(
+            r"^Prevent that damage\.$",
+            re.IGNORECASE,
+        ),
+        builder=_prevent_that_damage,
+    ),
+    TextTemplate(
+        name="attack_does_nothing",
+        description="Attack branch that has no direct effect.",
+        pattern=re.compile(r"^This attack does nothing\.$", re.IGNORECASE),
+        builder=_attack_does_nothing,
+    ),
+    TextTemplate(
+        name="move_energy_to_bench",
+        description="Move Energy from this Pokémon to your Benched Pokémon.",
+        pattern=re.compile(
+            rf"^Move an Energy from this {_POKEMON_TOKEN} to (?P<count>\d+) of your Benched {_POKEMON_TOKEN}\.$",
+            re.IGNORECASE,
+        ),
+        builder=_move_energy_to_bench,
+    ),
+    TextTemplate(
+        name="discard_random_opponent_hand",
+        description="Discard a random card from your opponent's hand.",
+        pattern=re.compile(
+            r"^Discard a random card from your opponent's hand\.$",
+            re.IGNORECASE,
+        ),
+        builder=_discard_random_opponent_hand,
+    ),
+    TextTemplate(
+        name="discard_top_opponent_deck",
+        description="Discard the top card from your opponent's deck.",
+        pattern=re.compile(
+            r"^Discard the top card of your opponent's deck\.$",
+            re.IGNORECASE,
+        ),
+        builder=_discard_top_opponent_deck,
+    ),
+    TextTemplate(
+        name="flip_coins_for_damage",
+        description="Flip N coins and do damage for each heads.",
+        pattern=re.compile(
+            r"^Flip (?P<coins>\d+) coins\. This attack does (?P<damage>\d+) damage for each heads\.$",
+            re.IGNORECASE,
+        ),
+        builder=_coin_damage_for_heads,
+    ),
+    TextTemplate(
+        name="flip_coin_only",
+        description="Flip a coin with no immediate branch clause.",
+        pattern=re.compile(r"^Flip a coin\.$", re.IGNORECASE),
+        builder=_flip_coin_only,
+    ),
+    TextTemplate(
+        name="parenthetical_noop",
+        description="Parenthetical reminder text with no state change in demo runtime.",
+        pattern=re.compile(
+            rf"^\((?:Your opponent chooses the new Active {_POKEMON_TOKEN}|Don't apply Weakness and Resistance for Benched {_POKEMON_TOKEN})\.\)$",
+            re.IGNORECASE,
+        ),
+        builder=_parenthetical_noop,
     ),
 ]
 
 COIN_FLIP_TEMPLATE = re.compile(
     r"^Flip a coin\. If heads, (?P<heads>.+?)\. If tails, (?P<tails>.+?)\.$",
+    re.IGNORECASE,
+)
+COIN_FLIP_SINGLE_BRANCH_TEMPLATE = re.compile(
+    r"^Flip a coin\. If (?P<result>heads|tails), (?P<effect>.+?)\.$",
     re.IGNORECASE,
 )
 
@@ -465,6 +918,31 @@ def _merge_coin_flip_sequences(sentences: list[str]) -> list[str]:
         ):
             merged.append(f"{current} {sentences[index + 1]} {sentences[index + 2]}")
             index += 3
+            continue
+
+        if (
+            current.lower() == "flip a coin."
+            and index + 1 < len(sentences)
+            and (
+                sentences[index + 1].lower().startswith("if heads,")
+                or sentences[index + 1].lower().startswith("if tails,")
+            )
+        ):
+            merged.append(f"{current} {sentences[index + 1]}")
+            index += 2
+            continue
+
+        if (
+            re.fullmatch(r"flip \d+ coins\.", current.strip(), flags=re.IGNORECASE)
+            and index + 1 < len(sentences)
+            and re.fullmatch(
+                r"this attack does \d+ damage for each (heads|tails)\.",
+                sentences[index + 1].strip(),
+                flags=re.IGNORECASE,
+            )
+        ):
+            merged.append(f"{current} {sentences[index + 1]}")
+            index += 2
             continue
 
         if (
@@ -571,6 +1049,31 @@ def _compile_clause(clause: str) -> tuple[list[EffectOperation], str | None]:
             "coin_flip_branch",
         )
 
+    single_coin_match = COIN_FLIP_SINGLE_BRANCH_TEMPLATE.fullmatch(clause)
+    if single_coin_match:
+        effect_text = single_coin_match.group("effect").strip()
+        if not effect_text.endswith("."):
+            effect_text = f"{effect_text}."
+
+        effect_program = compile_effect_text(effect_text)
+        result = single_coin_match.group("result").lower()
+        heads_ops = [operation.to_dict() for operation in effect_program.operations] if result == "heads" else []
+        tails_ops = [operation.to_dict() for operation in effect_program.operations] if result == "tails" else []
+        return (
+            [
+                EffectOperation(
+                    op="flip_coin",
+                    params={
+                        "heads": heads_ops,
+                        "tails": tails_ops,
+                        "heads_unresolved": effect_program.unresolved_text if result == "heads" else None,
+                        "tails_unresolved": effect_program.unresolved_text if result == "tails" else None,
+                    },
+                )
+            ],
+            "coin_flip_single_branch",
+        )
+
     for template in CLAUSE_TEMPLATES:
         match = template.pattern.fullmatch(clause)
         if match:
@@ -623,6 +1126,12 @@ def supported_templates() -> list[dict[str, str]]:
         {
             "name": "coin_flip_branch",
             "description": "Flip a coin with independent heads/tails effect clauses.",
+        }
+    )
+    templates.append(
+        {
+            "name": "coin_flip_single_branch",
+            "description": "Flip a coin where only one branch has an effect clause.",
         }
     )
     return templates

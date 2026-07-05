@@ -56,6 +56,34 @@ class RulesMechanicsTests(unittest.TestCase):
         apply_effect_program(damage_program, state, actor="p1")
         self.assertEqual(state["players"]["p2"]["active"]["hp"], 90)
 
+    def test_search_to_bench_and_hand_disruption_ops(self) -> None:
+        state = create_demo_state()
+        utility_program = EffectProgram(
+            source_text="utility",
+            operations=[
+                EffectOperation(op="search_deck_to_bench", params={"count": 2, "descriptor": "Basic Pokémon"}),
+                EffectOperation(op="discard_random_card", params={"target": "opponent_hand", "count": 1}),
+            ],
+        )
+        apply_effect_program(utility_program, state, actor="p1")
+        self.assertEqual(state["players"]["p1"]["bench_size"], 4)
+        self.assertEqual(state["players"]["p2"]["hand_size"], 4)
+
+    def test_damage_per_self_counter_operation(self) -> None:
+        state = create_demo_state()
+        state["players"]["p1"]["active"]["hp"] = 90  # 3 damage counters from 120 max_hp
+        program = EffectProgram(
+            source_text="counter scaling",
+            operations=[
+                EffectOperation(
+                    op="damage_per_self_damage_counter",
+                    params={"target": "opponent_active", "amount_per_counter": 20},
+                )
+            ],
+        )
+        apply_effect_program(program, state, actor="p1")
+        self.assertEqual(state["players"]["p2"]["active"]["hp"], 60)
+
 
 if __name__ == "__main__":
     unittest.main()

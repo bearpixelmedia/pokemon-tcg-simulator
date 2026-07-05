@@ -64,6 +64,71 @@ class TextCompilerTests(unittest.TestCase):
         self.assertTrue(program.is_fully_resolved)
         self.assertEqual(program.operations[0].op, "conditional_effect")
 
+    def test_recoil_clause_resolves(self) -> None:
+        program = compile_effect_text("This Pokémon also does 20 damage to itself.")
+        self.assertTrue(program.is_fully_resolved)
+        self.assertEqual(program.operations[0].op, "deal_damage")
+        self.assertEqual(program.operations[0].params["target"], "self_active")
+
+    def test_draw_a_card_resolves(self) -> None:
+        program = compile_effect_text("Draw a card.")
+        self.assertTrue(program.is_fully_resolved)
+        self.assertEqual(program.operations[0].op, "draw_cards")
+        self.assertEqual(program.operations[0].params["count"], 1)
+
+    def test_single_branch_coin_flip_resolves(self) -> None:
+        text = "Flip a coin. If tails, this attack does nothing."
+        program = compile_effect_text(text)
+        self.assertTrue(program.is_fully_resolved)
+        self.assertEqual(program.operations[0].op, "flip_coin")
+
+    def test_switch_this_pokemon_resolves(self) -> None:
+        text = "Switch this Pokémon with 1 of your Benched Pokémon."
+        program = compile_effect_text(text)
+        self.assertTrue(program.is_fully_resolved)
+        self.assertEqual(program.operations[0].op, "switch_active_with_bench")
+
+    def test_search_deck_to_bench_resolves(self) -> None:
+        text = "Search your deck for up to 2 Basic Pokémon and put them onto your Bench. Then, shuffle your deck."
+        program = compile_effect_text(text)
+        self.assertTrue(program.is_fully_resolved)
+        self.assertEqual(program.operations[0].op, "search_deck_to_bench")
+
+    def test_parenthetical_noop_clause_resolves(self) -> None:
+        program = compile_effect_text("(Your opponent chooses the new Active Pokémon.)")
+        self.assertTrue(program.is_fully_resolved)
+        self.assertEqual(program.operations[0].op, "annotation_noop")
+
+    def test_prevent_all_damage_clause_resolves(self) -> None:
+        text = "During your opponent's next turn, prevent all damage from and effects of attacks done to this Pokémon."
+        program = compile_effect_text(text)
+        self.assertTrue(program.is_fully_resolved)
+        self.assertEqual(program.operations[0].op, "script_hook")
+
+    def test_ignore_all_modifiers_clause_resolves(self) -> None:
+        text = "This attack's damage isn't affected by Weakness or Resistance, or by any effects on your opponent's Active Pokémon."
+        program = compile_effect_text(text)
+        self.assertTrue(program.is_fully_resolved)
+        self.assertEqual(len(program.operations), 2)
+
+    def test_flip_multiple_coins_damage_clause_resolves(self) -> None:
+        text = "Flip 2 coins. This attack does 10 damage for each heads."
+        program = compile_effect_text(text)
+        self.assertTrue(program.is_fully_resolved)
+        self.assertEqual(program.operations[0].op, "flip_coins_for_damage")
+
+    def test_once_during_turn_ability_note_resolves(self) -> None:
+        text = "Once during your turn, you may use this Ability."
+        program = compile_effect_text(text)
+        self.assertTrue(program.is_fully_resolved)
+        self.assertEqual(program.operations[0].op, "annotation_noop")
+
+    def test_item_lock_clause_resolves(self) -> None:
+        text = "During your opponent's next turn, they can't play any Item cards from their hand."
+        program = compile_effect_text(text)
+        self.assertTrue(program.is_fully_resolved)
+        self.assertEqual(program.operations[0].op, "apply_temporary_rule")
+
 
 if __name__ == "__main__":
     unittest.main()

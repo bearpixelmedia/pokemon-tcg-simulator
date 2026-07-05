@@ -161,6 +161,14 @@ def _apply_operation(
         events.append(f"{actor} searched deck for {count} {descriptor} card(s).")
         return
 
+    if normalized.op == "search_deck_to_bench":
+        count = int(normalized.params.get("count", 1))
+        descriptor = normalized.params.get("descriptor", "matching")
+        player = state["players"][actor]
+        player["bench_size"] = player.get("bench_size", 0) + count
+        events.append(f"{actor} benched up to {count} {descriptor} card(s) from deck.")
+        return
+
     if normalized.op == "shuffle_deck":
         events.append(f"{actor} shuffled their deck.")
         return
@@ -199,7 +207,59 @@ def _apply_operation(
         )
         return
 
-    if normalized.op in {"ignore_weakness_resistance", "apply_temporary_rule", "select_opponent_bench"}:
+    if normalized.op == "move_energy":
+        slot = state["players"][actor]["active"]
+        available = int(slot.get("energy_attached", 0))
+        count = min(int(normalized.params.get("count", 1)), available)
+        slot["energy_attached"] = max(0, available - count)
+        events.append(f"{actor} moved {count} Energy to the Bench.")
+        return
+
+    if normalized.op == "discard_random_card":
+        target_player = state["players"][_opponent(actor)]
+        discarded = min(int(normalized.params.get("count", 1)), int(target_player.get("hand_size", 0)))
+        target_player["hand_size"] = max(0, int(target_player.get("hand_size", 0)) - discarded)
+        events.append(f"{actor} discarded {discarded} random card(s) from opponent hand.")
+        return
+
+    if normalized.op == "mill_top_deck":
+        events.append(f"{actor} discarded top card(s) from opponent deck.")
+        return
+
+    if normalized.op == "discard_tools":
+        events.append(f"{actor} discarded Pokémon Tools from opponent Active Pokémon.")
+        return
+
+    if normalized.op == "damage_per_self_damage_counter":
+        active = state["players"][actor]["active"]
+        counters = max(0, (int(active.get("max_hp", 0)) - int(active.get("hp", 0))) // 10)
+        total_damage = counters * int(normalized.params.get("amount_per_counter", 0))
+        slot = state["players"][_opponent(actor)]["active"]
+        slot["hp"] = max(0, int(slot.get("hp", 0)) - total_damage)
+        events.append(f"{actor} dealt {total_damage} damage based on self damage counters.")
+        return
+
+    if normalized.op == "flip_coins_for_damage":
+        coin_count = int(normalized.params.get("coin_count", 0))
+        damage_per_heads = int(normalized.params.get("damage_per_heads", 0))
+        heads = 0
+        for _ in range(coin_count):
+            if rng.choice(["heads", "tails"]) == "heads":
+                heads += 1
+        total_damage = heads * damage_per_heads
+        slot = state["players"][_opponent(actor)]["active"]
+        slot["hp"] = max(0, int(slot.get("hp", 0)) - total_damage)
+        events.append(f"{actor} flipped {heads}/{coin_count} heads for {total_damage} damage.")
+        return
+
+    if normalized.op in {
+        "ignore_weakness_resistance",
+        "ignore_defending_effects",
+        "ignore_resistance",
+        "apply_temporary_rule",
+        "select_opponent_bench",
+        "annotation_noop",
+    }:
         events.append(f"{actor} prepared effect: {normalized.op}.")
         return
 
