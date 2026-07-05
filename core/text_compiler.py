@@ -94,7 +94,7 @@ def _script_hook_from_clause(hook_id: str, clause: str, extra: dict[str, str] | 
 
 def _script_hook_builder(hook_id: str, group_names: tuple[str, ...] = ()) -> Callable[[re.Match[str]], list[EffectOperation]]:
     def _builder(match: re.Match[str]) -> list[EffectOperation]:
-        params: dict[str, str] = {"hook_id": hook_id}
+        params: dict[str, str] = {"hook_id": hook_id, "clause": match.group(0)}
         for name in group_names:
             value = match.groupdict().get(name)
             if value is not None:

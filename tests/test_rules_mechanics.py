@@ -114,6 +114,47 @@ class RulesMechanicsTests(unittest.TestCase):
         apply_effect_program(program, state, actor="p1")
         self.assertEqual(state["players"]["p2"]["active"]["hp"], 80)
 
+    def test_script_hook_infers_discard_from_hand_clause(self) -> None:
+        state = create_demo_state()
+        program = EffectProgram(
+            source_text="script discard",
+            operations=[
+                EffectOperation(
+                    op="script_hook",
+                    params={"hook_id": "generic-discard-clause", "clause": "Discard 2 cards from your hand."},
+                )
+            ],
+        )
+        apply_effect_program(program, state, actor="p1")
+        self.assertEqual(state["players"]["p1"]["hand_size"], 3)
+
+    def test_script_hook_infers_each_player_shuffle_hand(self) -> None:
+        state = create_demo_state()
+        state["players"]["p1"]["hand_size"] = 6
+        state["players"]["p2"]["hand_size"] = 7
+        program = EffectProgram(
+            source_text="both shuffle",
+            operations=[EffectOperation(op="script_hook", params={"hook_id": "each-player-shuffles-hand-into-deck"})],
+        )
+        apply_effect_program(program, state, actor="p1")
+        self.assertEqual(state["players"]["p1"]["hand_size"], 0)
+        self.assertEqual(state["players"]["p2"]["hand_size"], 0)
+
+    def test_script_hook_infers_recover_from_all_special_conditions(self) -> None:
+        state = create_demo_state()
+        state["players"]["p1"]["active"]["status"] = ["Poisoned", "Asleep"]
+        program = EffectProgram(
+            source_text="recover statuses",
+            operations=[
+                EffectOperation(
+                    op="script_hook",
+                    params={"hook_id": "generic_tcg_clause", "clause": "This Pokémon recovers from all Special Conditions."},
+                )
+            ],
+        )
+        apply_effect_program(program, state, actor="p1")
+        self.assertEqual(state["players"]["p1"]["active"]["status"], [])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import random
 from typing import Any
 
@@ -76,6 +77,150 @@ def _apply_status_to_slot(slot: dict[str, Any], status: str) -> None:
     if status == "Paralyzed":
         # Paralysis expires during Pokémon Checkup after the owner's next turn.
         slot["paralyzed_turns_remaining"] = 1
+
+
+def _parse_count_token(raw: str | None, default: int = 1) -> int:
+    if raw is None:
+        return default
+    lowered = raw.strip().lower()
+    if lowered in {"a", "an"}:
+        return 1
+    if lowered in {"all", "any amount of"}:
+        return -1
+    return int(lowered)
+
+
+def _apply_script_hook_inference(
+    normalized: EffectOperation,
+    state: dict[str, Any],
+    actor: str,
+    rng: random.Random,
+    events: list[str],
+) -> bool:
+    hook_id = str(normalized.params.get("hook_id", "unknown"))
+    clause = str(normalized.params.get("clause", "")).strip()
+    opponent = _opponent(actor)
+
+    if hook_id in {"each-player-shuffles-hand-into-deck", "each-player-shuffle-hand-put-bottom"}:
+        state["players"][actor]["hand_size"] = 0
+        state["players"][opponent]["hand_size"] = 0
+        events.append(f"{actor} resolved scripted hook: both players shuffled their hand away.")
+        return True
+
+    if hook_id == "opponent-shuffle-hand-to-bottom":
+        state["players"][opponent]["hand_size"] = 0
+        events.append(f"{actor} resolved scripted hook: opponent shuffled hand away.")
+        return True
+
+    if hook_id == "then-you-draw-and-opponent-draws":
+        self_count = int(normalized.params.get("self_count", 0))
+        opp_count = int(normalized.params.get("opp_count", 0))
+        state["players"][actor]["hand_size"] += self_count
+        state["players"][opponent]["hand_size"] += opp_count
+        events.append(f"{actor} resolved scripted hook: draw split {self_count}/{opp_count}.")
+        return True
+
+    if hook_id == "then-draw-per-opponent-hand-cards":
+        draw = int(state["players"][opponent].get("hand_size", 0))
+        state["players"][actor]["hand_size"] += draw
+        events.append(f"{actor} resolved scripted hook: drew {draw} from opponent hand count.")
+        return True
+
+    if hook_id == "opponent-discards-until-hand-size":
+        cap = int(normalized.params.get("count", 0))
+        state["players"][opponent]["hand_size"] = min(int(state["players"][opponent].get("hand_size", 0)), cap)
+        events.append(f"{actor} resolved scripted hook: opponent hand reduced to {cap}.")
+        return True
+
+    if hook_id == "your-turn-ends":
+        state["players"][actor].setdefault("turn_flags", {})["force_end_turn"] = True
+        events.append(f"{actor} resolved scripted hook: turn will end.")
+        return True
+
+    if clause:
+        match = re.match(r"^Discard (?P<count>\d+|a|an) cards? from your hand\.$", clause, flags=re.IGNORECASE)
+        if match:
+            count = _parse_count_token(match.group("count"))
+            _apply_operation(EffectOperation(op="discard_cards", params={"target": "self_hand", "count": count}), state, actor, rng, events)
+            return True
+
+        if re.match(r"^Discard all Energy from this (?:Pokemon|Pokémon)\.$", clause, flags=re.IGNORECASE):
+            _apply_operation(EffectOperation(op="discard_energy", params={"target": "self_active", "count": -1}), state, actor, rng, events)
+            return True
+
+        match = re.match(r"^Discard (?P<count>\d+) Energy from this (?:Pokemon|Pokémon)\.$", clause, flags=re.IGNORECASE)
+        if match:
+            _apply_operation(
+                EffectOperation(op="discard_energy", params={"target": "self_active", "count": int(match.group("count"))}),
+                state,
+                actor,
+                rng,
+                events,
+            )
+            return True
+
+        match = re.match(r"^Attach (?:up to )?(?P<count>\d+|a|an) .*Energy card.*\.$", clause, flags=re.IGNORECASE)
+        if match:
+            count = _parse_count_token(match.group("count"))
+            if count < 0:
+                count = 1
+            _apply_operation(EffectOperation(op="attach_energy", params={"source": "script", "count": count}), state, actor, rng, events)
+            return True
+
+        match = re.match(r"^Heal (?P<amount>\d+) damage .+\.$", clause, flags=re.IGNORECASE)
+        if match:
+            _apply_operation(
+                EffectOperation(op="heal_damage", params={"target": "self_active", "amount": int(match.group("amount"))}),
+                state,
+                actor,
+                rng,
+                events,
+            )
+            return True
+
+        match = re.match(
+            r"^Move (?P<count>\d+|all|any amount of|a|an) .*Energy from this (?:Pokemon|Pokémon) to \d+ of your Benched (?:Pokemon|Pokémon)\.$",
+            clause,
+            flags=re.IGNORECASE,
+        )
+        if match:
+            count = _parse_count_token(match.group("count"))
+            _apply_operation(
+                EffectOperation(op="move_energy", params={"source": "self_active", "target": "self_bench", "count": count}),
+                state,
+                actor,
+                rng,
+                events,
+            )
+            return True
+
+        match = re.match(r"^Put (?P<count>\d+) damage counters on your opponent's Active (?:Pokemon|Pokémon)\.$", clause, flags=re.IGNORECASE)
+        if match:
+            _apply_operation(
+                EffectOperation(op="deal_damage", params={"target": "opponent_active", "amount": int(match.group("count")) * 10}),
+                state,
+                actor,
+                rng,
+                events,
+            )
+            return True
+
+        if re.match(r"^This (?:Pokemon|Pokémon) recovers from all Special Conditions\.$", clause, flags=re.IGNORECASE):
+            state["players"][actor]["active"]["status"] = []
+            events.append(f"{actor} resolved scripted hook: active recovered from all statuses.")
+            return True
+
+        if re.match(r"^Make your opponent's Active (?:Pokemon|Pokémon) Confused\.$", clause, flags=re.IGNORECASE):
+            _apply_operation(
+                EffectOperation(op="apply_status", params={"target": "opponent_active", "status": "Confused"}),
+                state,
+                actor,
+                rng,
+                events,
+            )
+            return True
+
+    return False
 
 
 def apply_effect_program(
@@ -487,6 +632,8 @@ def _apply_operation(
             slot = state["players"][actor]["active"]
             slot["prevent_all_damage_turns_remaining"] = 1
             events.append(f"{actor} set prevent-all-damage shield for next opponent turn.")
+            return
+        if _apply_script_hook_inference(normalized, state, actor, rng, events):
             return
         events.append(f"{actor} queued scripted hook: {hook_id}.")
         return
