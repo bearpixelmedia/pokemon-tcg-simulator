@@ -177,6 +177,23 @@ class TextCompilerTests(unittest.TestCase):
         self.assertTrue(program.is_fully_resolved)
         self.assertEqual(program.operations[0].op, "conditional_effect")
 
+    def test_then_shuffle_your_deck_resolves(self) -> None:
+        program = compile_effect_text("Then, shuffle your deck.")
+        self.assertTrue(program.is_fully_resolved)
+        self.assertEqual(program.operations[0].op, "shuffle_deck")
+
+    def test_search_up_to_n_pokemon_to_hand_resolves(self) -> None:
+        text = "Search your deck for up to 3 Pokémon, reveal them, and put them into your hand. Then, shuffle your deck."
+        program = compile_effect_text(text)
+        self.assertTrue(program.is_fully_resolved)
+        self.assertEqual(program.operations[0].op, "search_deck_to_hand")
+
+    def test_status_asleep_and_poisoned_resolves(self) -> None:
+        text = "Your opponent's Active Pokémon is now Asleep and Poisoned."
+        program = compile_effect_text(text)
+        self.assertTrue(program.is_fully_resolved)
+        self.assertEqual(len(program.operations), 2)
+
 
 if __name__ == "__main__":
     unittest.main()

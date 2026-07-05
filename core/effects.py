@@ -45,9 +45,9 @@ def _opponent(actor: str) -> str:
 
 
 def _target_slot(state: dict[str, Any], actor: str, target: str) -> dict[str, Any]:
-    if target in {"self_active", "self_pokemon"}:
+    if target in {"self_active", "self_pokemon", "self_bench", "self_other"}:
         return state["players"][actor]["active"]
-    if target == "opponent_active":
+    if target in {"opponent_active", "opponent_any_pokemon"}:
         return state["players"][_opponent(actor)]["active"]
     if target == "opponent_bench":
         return state["players"][_opponent(actor)]["active"]
@@ -167,6 +167,12 @@ def _apply_operation(
         events.append(f"{actor} searched deck for {count} {descriptor} card(s).")
         return
 
+    if normalized.op == "shuffle_hand_into_deck":
+        player = state["players"][actor]
+        player["hand_size"] = 0
+        events.append(f"{actor} shuffled hand into deck.")
+        return
+
     if normalized.op == "search_deck_to_bench":
         count = int(normalized.params.get("count", 1))
         descriptor = normalized.params.get("descriptor", "matching")
@@ -239,6 +245,18 @@ def _apply_operation(
             player["hand_size"] = max(0, int(player.get("hand_size", 0)) - discarded)
             events.append(f"{actor} discarded {discarded} card(s) from hand.")
             return
+
+    if normalized.op == "recover_from_discard_to_hand":
+        count = int(normalized.params.get("count", 1))
+        state["players"][actor]["hand_size"] = int(state["players"][actor].get("hand_size", 0)) + count
+        events.append(f"{actor} recovered {count} card(s) from discard to hand.")
+        return
+
+    if normalized.op == "look_top_deck_pick":
+        picked = int(normalized.params.get("pick_count", 1))
+        state["players"][actor]["hand_size"] = int(state["players"][actor].get("hand_size", 0)) + picked
+        events.append(f"{actor} looked at top deck cards and picked {picked}.")
+        return
 
     if normalized.op == "mill_top_deck":
         events.append(f"{actor} discarded top card(s) from opponent deck.")
@@ -318,6 +336,21 @@ def _apply_operation(
         events.append(f"{actor} dealt {total_damage} damage based on prizes taken.")
         return
 
+    if normalized.op == "damage_per_pokemon_in_play":
+        amount = int(normalized.params.get("amount_per_pokemon", 0))
+        scope = normalized.params.get("scope", "self")
+        if scope == "self":
+            count = 1 + int(state["players"][actor].get("bench_size", 0))
+        else:
+            count = 1 + int(state["players"][actor].get("bench_size", 0)) + 1 + int(
+                state["players"][_opponent(actor)].get("bench_size", 0)
+            )
+        total_damage = amount * count
+        target = state["players"][_opponent(actor)]["active"]
+        target["hp"] = max(0, int(target.get("hp", 0)) - total_damage)
+        events.append(f"{actor} dealt {total_damage} damage based on Pokémon in play.")
+        return
+
     if normalized.op == "flip_until_tails_damage_bonus":
         amount = int(normalized.params.get("amount_per_heads", 0))
         heads = 0
@@ -385,6 +418,10 @@ def _apply_operation(
         events.append(f"{actor} shuffled a random opponent hand card into deck.")
         return
 
+    if normalized.op == "choose_self_pokemon":
+        events.append(f"{actor} chose their own Pokémon.")
+        return
+
     if normalized.op == "return_attached_energy_to_hand":
         slot = state["players"][actor]["active"]
         if int(slot.get("energy_attached", 0)) > 0:
@@ -395,6 +432,10 @@ def _apply_operation(
 
     if normalized.op == "scoop_up_self":
         events.append(f"{actor} scooped up their Active Pokémon and attached cards.")
+        return
+
+    if normalized.op == "put_card_on_bottom_of_deck":
+        events.append(f"{actor} put card(s) on bottom of deck.")
         return
 
     if normalized.op == "flip_coins_for_damage":
@@ -408,6 +449,15 @@ def _apply_operation(
         slot = state["players"][_opponent(actor)]["active"]
         slot["hp"] = max(0, int(slot.get("hp", 0)) - total_damage)
         events.append(f"{actor} flipped {heads}/{coin_count} heads for {total_damage} damage.")
+        return
+
+    if normalized.op == "flip_coins":
+        coin_count = int(normalized.params.get("count", 0))
+        heads = 0
+        for _ in range(coin_count):
+            if rng.choice(["heads", "tails"]) == "heads":
+                heads += 1
+        events.append(f"{actor} flipped {heads}/{coin_count} heads.")
         return
 
     if normalized.op in {

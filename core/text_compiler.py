@@ -32,6 +32,7 @@ _WHEN_PLAY_FROM_HAND_TO_BENCH_TEMPLATE = re.compile(
 def normalize_card_text(text: str) -> str:
     cleaned = text.strip()
     cleaned = cleaned.replace("’", "'")
+    cleaned = re.sub(r"^[•\-]\s*", "", cleaned)
     cleaned = re.sub(r"\s+", " ", cleaned)
     return cleaned
 
@@ -1025,6 +1026,334 @@ def _defending_attack_damage_reduction_next_turn(match: re.Match[str]) -> list[E
     ]
 
 
+def _then_shuffle_deck(match: re.Match[str]) -> list[EffectOperation]:
+    _ = match
+    return [EffectOperation(op="shuffle_deck", params={"target": "self_player"})]
+
+
+def _shuffle_hand_into_deck(match: re.Match[str]) -> list[EffectOperation]:
+    _ = match
+    return [EffectOperation(op="shuffle_hand_into_deck", params={"target": "self_player"})]
+
+
+def _then_draw_cards(match: re.Match[str]) -> list[EffectOperation]:
+    return [EffectOperation(op="draw_cards", params={"target": "self_player", "count": int(match.group("count"))})]
+
+
+def _conditional_draw_by_prize_state(match: re.Match[str]) -> list[EffectOperation]:
+    return [
+        EffectOperation(
+            op="conditional_effect",
+            params={
+                "condition": normalize_card_text(match.group("condition")),
+                "operations": [
+                    {
+                        "op": "draw_cards",
+                        "params": {"target": "self_player", "count": int(match.group("count"))},
+                    }
+                ],
+            },
+        )
+    ]
+
+
+def _as_often_use_ability_note(match: re.Match[str]) -> list[EffectOperation]:
+    _ = match
+    return [EffectOperation(op="annotation_noop", params={"note": "as_often_use_ability"})]
+
+
+def _move_basic_energy_between_self_pokemon(match: re.Match[str]) -> list[EffectOperation]:
+    return [
+        EffectOperation(
+            op="move_energy",
+            params={"source": "self_pokemon", "target": "self_pokemon", "count": int(match.group("count"))},
+        )
+    ]
+
+
+def _defending_attack_flip_tails_fails(match: re.Match[str]) -> list[EffectOperation]:
+    _ = match
+    return [EffectOperation(op="script_hook", params={"hook_id": "defending-attack-flip-tails-fails"})]
+
+
+def _once_if_active_may_use_ability(match: re.Match[str]) -> list[EffectOperation]:
+    _ = match
+    return [EffectOperation(op="annotation_noop", params={"note": "once_if_active_may_use_ability"})]
+
+
+def _card_use_gate_by_opponent_prizes(match: re.Match[str]) -> list[EffectOperation]:
+    return [
+        EffectOperation(
+            op="apply_temporary_rule",
+            params={"target": "self_player", "rule": "card_use_gate_by_opponent_prizes", "max_prizes": int(match.group("count"))},
+        )
+    ]
+
+
+def _choose_self_pokemon_in_play(match: re.Match[str]) -> list[EffectOperation]:
+    _ = match
+    return [EffectOperation(op="choose_self_pokemon", params={"count": 1})]
+
+
+def _prevent_all_damage_effects_to_that_from_ex(match: re.Match[str]) -> list[EffectOperation]:
+    _ = match
+    return [
+        EffectOperation(
+            op="apply_temporary_rule",
+            params={"target": "chosen_self_pokemon", "rule": "prevent_all_damage_effects_from_ex_next_turn"},
+        )
+    ]
+
+
+def _recover_pokemon_or_basic_energy_from_discard(match: re.Match[str]) -> list[EffectOperation]:
+    _ = match
+    return [EffectOperation(op="recover_from_discard_to_hand", params={"count": 1, "descriptor": "pokemon_or_basic_energy"})]
+
+
+def _status_asleep_and_poisoned(match: re.Match[str]) -> list[EffectOperation]:
+    _ = match
+    return [
+        EffectOperation(op="apply_status", params={"target": "opponent_active", "status": "Asleep"}),
+        EffectOperation(op="apply_status", params={"target": "opponent_active", "status": "Poisoned"}),
+    ]
+
+
+def _no_retreat_cost_if_no_energy(match: re.Match[str]) -> list[EffectOperation]:
+    _ = match
+    return [
+        EffectOperation(
+            op="apply_temporary_rule",
+            params={"target": "self_active", "rule": "no_retreat_cost_if_no_energy"},
+        )
+    ]
+
+
+def _discard_any_amount_energy_among_self(match: re.Match[str]) -> list[EffectOperation]:
+    _ = match
+    return [EffectOperation(op="discard_energy", params={"target": "self_pokemon", "count": -1})]
+
+
+def _discard_any_amount_energy_and_damage(match: re.Match[str]) -> list[EffectOperation]:
+    return [
+        EffectOperation(op="discard_energy", params={"target": "self_pokemon", "count": -1}),
+        EffectOperation(
+            op="damage_per_discarded_energy",
+            params={"target": "opponent_active", "amount_per_energy": int(match.group("amount")), "kind": "base"},
+        ),
+    ]
+
+
+def _damage_for_each_self_pokemon_in_play(match: re.Match[str]) -> list[EffectOperation]:
+    return [
+        EffectOperation(
+            op="damage_per_pokemon_in_play",
+            params={"target": "opponent_active", "amount_per_pokemon": int(match.group("amount")), "scope": "self"},
+        )
+    ]
+
+
+def _damage_more_per_energy_on_self(match: re.Match[str]) -> list[EffectOperation]:
+    return [
+        EffectOperation(
+            op="damage_per_attached_energy",
+            params={"target": "self_active", "amount_per_energy": int(match.group("amount")), "kind": "bonus"},
+        )
+    ]
+
+
+def _damage_base_per_prize_taken(match: re.Match[str]) -> list[EffectOperation]:
+    return [
+        EffectOperation(
+            op="damage_per_prize_taken",
+            params={"target": "opponent_active", "amount_per_prize": int(match.group("amount")), "kind": "base"},
+        )
+    ]
+
+
+def _flip_n_coins_only(match: re.Match[str]) -> list[EffectOperation]:
+    return [EffectOperation(op="flip_coins", params={"count": int(match.group("count"))})]
+
+
+def _put_other_card_on_bottom(match: re.Match[str]) -> list[EffectOperation]:
+    _ = match
+    return [EffectOperation(op="put_card_on_bottom_of_deck", params={"count": 1})]
+
+
+def _if_go_first_may_use_card_first_turn(match: re.Match[str]) -> list[EffectOperation]:
+    _ = match
+    return [EffectOperation(op="apply_temporary_rule", params={"target": "self_player", "rule": "may_use_card_if_go_first"})]
+
+
+def _limit_named_ability_during_turn(match: re.Match[str]) -> list[EffectOperation]:
+    return [
+        EffectOperation(
+            op="apply_temporary_rule",
+            params={"target": "self_player", "rule": "limit_named_ability_per_turn", "count": int(match.group("count"))},
+        )
+    ]
+
+
+def _festival_grounds_attack_twice_first_clause(match: re.Match[str]) -> list[EffectOperation]:
+    _ = match
+    return [EffectOperation(op="script_hook", params={"hook_id": "festival-grounds-attack-twice"})]
+
+
+def _if_first_attack_ko_attack_again(match: re.Match[str]) -> list[EffectOperation]:
+    _ = match
+    return [EffectOperation(op="script_hook", params={"hook_id": "attack-again-after-first-ko"})]
+
+
+def _flip_until_tails(match: re.Match[str]) -> list[EffectOperation]:
+    _ = match
+    return [EffectOperation(op="annotation_noop", params={"note": "flip_until_tails_context"})]
+
+
+def _damage_bonus_per_heads_after_until_tails(match: re.Match[str]) -> list[EffectOperation]:
+    return [EffectOperation(op="flip_until_tails_damage_bonus", params={"amount_per_heads": int(match.group("amount"))})]
+
+
+def _prevent_effects_not_damage_single(match: re.Match[str]) -> list[EffectOperation]:
+    _ = match
+    return [EffectOperation(op="apply_temporary_rule", params={"target": "self_active", "rule": "prevent_attack_effects_only"})]
+
+
+def _turn_damage_bonus_to_active_ex_v(match: re.Match[str]) -> list[EffectOperation]:
+    return [
+        EffectOperation(
+            op="apply_temporary_rule",
+            params={"target": "self_player", "rule": "attacks_bonus_damage_to_ex_v_this_turn", "amount": int(match.group("amount"))},
+        )
+    ]
+
+
+def _switch_benched_with_active_generic(match: re.Match[str]) -> list[EffectOperation]:
+    _ = match
+    return [EffectOperation(op="switch_active_with_bench", params={"target": "self_player"})]
+
+
+def _if_you_do_new_active_poisoned(match: re.Match[str]) -> list[EffectOperation]:
+    _ = match
+    return [
+        EffectOperation(
+            op="conditional_effect",
+            params={
+                "condition": "if_you_did_switch",
+                "operations": [{"op": "apply_status", "params": {"target": "self_active", "status": "Poisoned"}}],
+            },
+        )
+    ]
+
+
+def _opponent_flips_coin_when_defending_attacks(match: re.Match[str]) -> list[EffectOperation]:
+    _ = match
+    return [EffectOperation(op="script_hook", params={"hook_id": "opponent-flips-coin-when-defending-attacks"})]
+
+
+def _if_tails_attack_doesnt_happen(match: re.Match[str]) -> list[EffectOperation]:
+    _ = match
+    return [EffectOperation(op="conditional_effect", params={"condition": "coin_result_is_tails", "operations": []})]
+
+
+def _prize_take_reduction_when_dark_koed_by_ex(match: re.Match[str]) -> list[EffectOperation]:
+    return [
+        EffectOperation(
+            op="apply_temporary_rule",
+            params={"target": "opponent_player", "rule": "take_fewer_prize_on_dark_ko", "count": int(match.group("count"))},
+        )
+    ]
+
+
+def _effect_doesnt_stack_note(match: re.Match[str]) -> list[EffectOperation]:
+    _ = match
+    return [EffectOperation(op="annotation_noop", params={"note": "effect_does_not_stack"})]
+
+
+def _damage_per_self_pokemon_with_round(match: re.Match[str]) -> list[EffectOperation]:
+    return [
+        EffectOperation(
+            op="damage_per_pokemon_in_play",
+            params={"target": "opponent_active", "amount_per_pokemon": int(match.group("amount")), "scope": "self", "filter": "has_round_attack"},
+        )
+    ]
+
+
+def _can_use_attack_if_go_first(match: re.Match[str]) -> list[EffectOperation]:
+    _ = match
+    return [EffectOperation(op="apply_temporary_rule", params={"target": "self_active", "rule": "can_use_attack_if_go_first"})]
+
+
+def _discard_basic_energy_cost_for_ability(match: re.Match[str]) -> list[EffectOperation]:
+    _ = match
+    return [EffectOperation(op="discard_energy", params={"target": "self_active", "count": 1})]
+
+
+def _copy_opponent_active_attack(match: re.Match[str]) -> list[EffectOperation]:
+    _ = match
+    return [EffectOperation(op="script_hook", params={"hook_id": "copy-opponent-active-attack"})]
+
+
+def _once_if_dark_energy_move_damage_counters(match: re.Match[str]) -> list[EffectOperation]:
+    _ = match
+    return [EffectOperation(op="script_hook", params={"hook_id": "once-dark-energy-move-damage-counters"})]
+
+
+def _once_look_top_pick_one(match: re.Match[str]) -> list[EffectOperation]:
+    return [
+        EffectOperation(
+            op="look_top_deck_pick",
+            params={"look_count": int(match.group("look")), "pick_count": int(match.group("pick"))},
+        )
+    ]
+
+
+def _once_first_turn_search_limited_hp(match: re.Match[str]) -> list[EffectOperation]:
+    return [
+        EffectOperation(
+            op="script_hook",
+            params={"hook_id": "once-first-turn-search-limited-hp", "count": int(match.group("count")), "hp_limit": int(match.group("hp"))},
+        )
+    ]
+
+
+def _attack_cost_reduction_if_more_prizes(match: re.Match[str]) -> list[EffectOperation]:
+    _ = match
+    return [EffectOperation(op="apply_temporary_rule", params={"target": "self_active", "rule": "attack_cost_reduction_if_more_prizes"})]
+
+
+def _card_use_gate_if_have_tera(match: re.Match[str]) -> list[EffectOperation]:
+    _ = match
+    return [EffectOperation(op="apply_temporary_rule", params={"target": "self_player", "rule": "card_use_gate_if_have_tera"})]
+
+
+def _attach_basic_energy_discard_to_benched_count(match: re.Match[str]) -> list[EffectOperation]:
+    return [
+        EffectOperation(
+            op="attach_energy",
+            params={"source": "discard", "target": "self_bench", "count": int(match.group("count")), "descriptor": "Basic", "allow_less": True},
+        )
+    ]
+
+
+def _card_use_gate_discard_another_card(match: re.Match[str]) -> list[EffectOperation]:
+    _ = match
+    return [
+        EffectOperation(op="apply_temporary_rule", params={"target": "self_player", "rule": "card_use_gate_discard_another_card"}),
+        EffectOperation(op="discard_cards", params={"target": "self_hand", "count": 1}),
+    ]
+
+
+def _conditional_draw_until_if_all_team_rocket(match: re.Match[str]) -> list[EffectOperation]:
+    return [
+        EffectOperation(
+            op="conditional_effect",
+            params={
+                "condition": "all_team_rocket_in_play",
+                "operations": [{"op": "draw_until_hand_size", "params": {"target": "self_player", "count": int(match.group("count"))}}],
+            },
+        )
+    ]
+
+
 CLAUSE_TEMPLATES: list[TextTemplate] = [
     TextTemplate(
         name="damage_bonus_active",
@@ -1180,7 +1509,7 @@ CLAUSE_TEMPLATES: list[TextTemplate] = [
         name="switch_self_active",
         description="Switch your Active Pokémon with one of your Benched Pokémon.",
         pattern=re.compile(
-            rf"^Switch (?:your Active {_POKEMON_TOKEN}|this {_POKEMON_TOKEN}) with 1 of your Benched {_POKEMON_TOKEN}\.$",
+            rf"^Switch (?:your Active(?: .+?)? {_POKEMON_TOKEN}|this {_POKEMON_TOKEN}) with 1 of your Benched(?: .+?)? {_POKEMON_TOKEN}\.$",
             re.IGNORECASE,
         ),
         builder=_switch_self_active,
@@ -1444,6 +1773,12 @@ CLAUSE_TEMPLATES: list[TextTemplate] = [
         builder=_coin_damage_for_heads,
     ),
     TextTemplate(
+        name="flip_n_coins_only",
+        description="Flip a fixed number of coins.",
+        pattern=re.compile(r"^Flip (?P<count>\d+) coins\.$", re.IGNORECASE),
+        builder=_flip_n_coins_only,
+    ),
+    TextTemplate(
         name="flip_coin_only",
         description="Flip a coin with no immediate branch clause.",
         pattern=re.compile(r"^Flip a coin\.$", re.IGNORECASE),
@@ -1453,7 +1788,7 @@ CLAUSE_TEMPLATES: list[TextTemplate] = [
         name="parenthetical_noop",
         description="Parenthetical reminder text with no state change in demo runtime.",
         pattern=re.compile(
-            rf"^\((?:Your opponent chooses the new Active {_POKEMON_TOKEN}|Don't apply Weakness and Resistance for Benched {_POKEMON_TOKEN}|Apply Weakness as [×x]2)\.\)$",
+            rf"^\((?:Your opponent chooses the new Active {_POKEMON_TOKEN}|Don't apply Weakness and Resistance for Benched {_POKEMON_TOKEN}|Apply Weakness as [×x]2|Damage is not an effect)\.\)$",
             re.IGNORECASE,
         ),
         builder=_parenthetical_noop,
@@ -1762,7 +2097,7 @@ CLAUSE_TEMPLATES: list[TextTemplate] = [
         name="move_any_energy_from_other_to_self",
         description="Move any amount of Energy from your other Pokémon to this Pokémon.",
         pattern=re.compile(
-            rf"^You may move any amount of Energy from your other {_POKEMON_TOKEN} to this {_POKEMON_TOKEN}\.$",
+            rf"^(?:If you do, )?you may move any amount of Energy from your other {_POKEMON_TOKEN} to this {_POKEMON_TOKEN}\.$",
             re.IGNORECASE,
         ),
         builder=_move_any_energy_from_other_to_self,
@@ -1972,6 +2307,15 @@ CLAUSE_TEMPLATES: list[TextTemplate] = [
         builder=_limit_named_ability_per_turn,
     ),
     TextTemplate(
+        name="limit_named_ability_during_turn",
+        description="Cannot use a named Ability more than N times during your turn.",
+        pattern=re.compile(
+            r"^You can't use more than (?P<count>\d+) .+? Ability during your turn\.$",
+            re.IGNORECASE,
+        ),
+        builder=_limit_named_ability_during_turn,
+    ),
+    TextTemplate(
         name="place_damage_counters_opponent_bench",
         description="Place damage counters on opponent Benched Pokémon.",
         pattern=re.compile(
@@ -2048,6 +2392,384 @@ CLAUSE_TEMPLATES: list[TextTemplate] = [
             re.IGNORECASE,
         ),
         builder=_defending_attack_damage_reduction_next_turn,
+    ),
+    TextTemplate(
+        name="festival_grounds_attack_twice_first_clause",
+        description="Festival Grounds allows this Pokémon to attack twice.",
+        pattern=re.compile(
+            rf"^If Festival Grounds is in play, this {_POKEMON_TOKEN} may use an attack it has twice\.$",
+            re.IGNORECASE,
+        ),
+        builder=_festival_grounds_attack_twice_first_clause,
+    ),
+    TextTemplate(
+        name="if_first_attack_ko_attack_again",
+        description="If first attack KOs, this Pokémon may attack again.",
+        pattern=re.compile(
+            rf"^If the first attack Knocks Out your opponent's Active {_POKEMON_TOKEN}, you may attack again after your opponent chooses a new Active {_POKEMON_TOKEN}\.$",
+            re.IGNORECASE,
+        ),
+        builder=_if_first_attack_ko_attack_again,
+    ),
+    TextTemplate(
+        name="flip_until_tails",
+        description="Flip coin until tails setup clause.",
+        pattern=re.compile(r"^Flip a coin until you get tails\.$", re.IGNORECASE),
+        builder=_flip_until_tails,
+    ),
+    TextTemplate(
+        name="damage_bonus_per_heads_after_until_tails",
+        description="Damage bonus for each heads after flip-until-tails.",
+        pattern=re.compile(
+            r"^This attack does (?P<amount>\d+) more damage for each heads\.$",
+            re.IGNORECASE,
+        ),
+        builder=_damage_bonus_per_heads_after_until_tails,
+    ),
+    TextTemplate(
+        name="prevent_effects_not_damage_single",
+        description="Prevent all attack effects done to this Pokémon (not damage).",
+        pattern=re.compile(
+            rf"^Prevent all effects of attacks used by your opponent's {_POKEMON_TOKEN} done to this {_POKEMON_TOKEN}\.$",
+            re.IGNORECASE,
+        ),
+        builder=_prevent_effects_not_damage_single,
+    ),
+    TextTemplate(
+        name="turn_damage_bonus_to_active_ex_v",
+        description="Bonus damage against Active Pokémon ex and Active Pokémon V.",
+        pattern=re.compile(
+            rf"^During this turn, attacks used by your {_POKEMON_TOKEN} do (?P<amount>\d+) more damage to your opponent's Active {_POKEMON_TOKEN} ex and Active {_POKEMON_TOKEN} V \(before applying Weakness and Resistance\)\.$",
+            re.IGNORECASE,
+        ),
+        builder=_turn_damage_bonus_to_active_ex_v,
+    ),
+    TextTemplate(
+        name="if_you_do_new_active_poisoned",
+        description="If you did switch, new Active Pokémon is Poisoned.",
+        pattern=re.compile(
+            rf"^If you do, the new Active {_POKEMON_TOKEN} is now Poisoned\.$",
+            re.IGNORECASE,
+        ),
+        builder=_if_you_do_new_active_poisoned,
+    ),
+    TextTemplate(
+        name="opponent_flips_coin_when_defending_attacks",
+        description="Defending attack attempt forces opponent coin flip.",
+        pattern=re.compile(
+            rf"^During your opponent's next turn, if the Defending {_POKEMON_TOKEN} tries to use an attack, your opponent flips a coin\.$",
+            re.IGNORECASE,
+        ),
+        builder=_opponent_flips_coin_when_defending_attacks,
+    ),
+    TextTemplate(
+        name="if_tails_attack_doesnt_happen",
+        description="If tails, that attack does not happen.",
+        pattern=re.compile(
+            r"^If tails, that attack doesn't happen\.$",
+            re.IGNORECASE,
+        ),
+        builder=_if_tails_attack_doesnt_happen,
+    ),
+    TextTemplate(
+        name="can_use_attack_if_go_first",
+        description="If you go first, can use this attack on first turn.",
+        pattern=re.compile(
+            r"^If you go first, you can use this attack during your first turn\.$",
+            re.IGNORECASE,
+        ),
+        builder=_can_use_attack_if_go_first,
+    ),
+    TextTemplate(
+        name="if_go_first_may_use_card_first_turn",
+        description="If you go first, you may use this card during your first turn.",
+        pattern=re.compile(
+            r"^If you go first, you may use this card during your first turn\.$",
+            re.IGNORECASE,
+        ),
+        builder=_if_go_first_may_use_card_first_turn,
+    ),
+    TextTemplate(
+        name="switch_benched_with_active_generic",
+        description="Switch one tagged Benched Pokémon with your Active Pokémon.",
+        pattern=re.compile(
+            rf"^Switch 1 of your Benched .+? {_POKEMON_TOKEN}, except any .+?, with your Active {_POKEMON_TOKEN}\.$",
+            re.IGNORECASE,
+        ),
+        builder=_switch_benched_with_active_generic,
+    ),
+    TextTemplate(
+        name="prize_take_reduction_when_dark_koed_by_ex",
+        description="Opponent takes fewer prize cards when your dark Pokémon is KOed by ex.",
+        pattern=re.compile(
+            rf"^If 1 of your \{{[A-Z]\}} {_POKEMON_TOKEN} is Knocked Out by damage from an attack from your opponent's {_POKEMON_TOKEN} ex, that player takes (?P<count>\d+) fewer Prize card\.$",
+            re.IGNORECASE,
+        ),
+        builder=_prize_take_reduction_when_dark_koed_by_ex,
+    ),
+    TextTemplate(
+        name="effect_doesnt_stack_note",
+        description="Effect does not stack reminder text.",
+        pattern=re.compile(r"^The effect of .+? doesn't stack\.$", re.IGNORECASE),
+        builder=_effect_doesnt_stack_note,
+    ),
+    TextTemplate(
+        name="damage_per_self_pokemon_with_round",
+        description="Damage scaling by your Pokémon in play with Round attack.",
+        pattern=re.compile(
+            rf"^This attack does (?P<amount>\d+) damage for each of your {_POKEMON_TOKEN} in play that has the Round attack\.$",
+            re.IGNORECASE,
+        ),
+        builder=_damage_per_self_pokemon_with_round,
+    ),
+    TextTemplate(
+        name="discard_basic_energy_cost_for_ability",
+        description="Discard a typed Basic energy as ability cost.",
+        pattern=re.compile(
+            rf"^You must discard a Basic \{{[A-Z]\}} Energy from this {_POKEMON_TOKEN} in order to use this Ability\.$",
+            re.IGNORECASE,
+        ),
+        builder=_discard_basic_energy_cost_for_ability,
+    ),
+    TextTemplate(
+        name="copy_opponent_active_attack",
+        description="Choose one opponent Active attack and use it as this attack.",
+        pattern=re.compile(
+            rf"^Choose 1 of your opponent's Active {_POKEMON_TOKEN}'s attacks and use it as this attack\.$",
+            re.IGNORECASE,
+        ),
+        builder=_copy_opponent_active_attack,
+    ),
+    TextTemplate(
+        name="once_if_dark_energy_move_damage_counters",
+        description="Once during turn if dark energy attached, move damage counters.",
+        pattern=re.compile(
+            rf"^Once during your turn, if this {_POKEMON_TOKEN} has any \{{[A-Z]\}} Energy attached, you may move up to \d+ damage counters from \d+ of your {_POKEMON_TOKEN} to \d+ of your opponent's {_POKEMON_TOKEN}\.$",
+            re.IGNORECASE,
+        ),
+        builder=_once_if_dark_energy_move_damage_counters,
+    ),
+    TextTemplate(
+        name="once_look_top_pick_one",
+        description="Once during turn look top N cards and keep one.",
+        pattern=re.compile(
+            r"^Once during your turn, you may look at the top (?P<look>\d+) cards of your deck and put (?P<pick>\d+) of them into your hand\.$",
+            re.IGNORECASE,
+        ),
+        builder=_once_look_top_pick_one,
+    ),
+    TextTemplate(
+        name="once_first_turn_search_limited_hp",
+        description="Once during first turn, search typed Pokémon with HP limit.",
+        pattern=re.compile(
+            rf"^Once during your first turn, you may search your deck for up to (?P<count>\d+) \{{[A-Z]\}} {_POKEMON_TOKEN} with (?P<hp>\d+) HP or less, reveal them, and put them into your hand\.$",
+            re.IGNORECASE,
+        ),
+        builder=_once_first_turn_search_limited_hp,
+    ),
+    TextTemplate(
+        name="attack_cost_reduction_if_more_prizes",
+        description="If you have more prizes remaining, attached Pokémon attacks cost less.",
+        pattern=re.compile(
+            r"^If you have more Prize cards remaining than your opponent, attacks used by the Pokémon this card is attached to cost \{[A-Z]\} less\.$",
+            re.IGNORECASE,
+        ),
+        builder=_attack_cost_reduction_if_more_prizes,
+    ),
+    TextTemplate(
+        name="card_use_gate_if_have_tera",
+        description="Card can be used only if you have any Tera Pokémon in play.",
+        pattern=re.compile(
+            rf"^You can use this card only if you have any Tera {_POKEMON_TOKEN} in play\.$",
+            re.IGNORECASE,
+        ),
+        builder=_card_use_gate_if_have_tera,
+    ),
+    TextTemplate(
+        name="attach_basic_energy_discard_to_benched_count",
+        description="Attach basic energy from discard to up to N benched typed Pokémon.",
+        pattern=re.compile(
+            rf"^Choose up to (?P<count>\d+) of your Benched \{{[A-Z]\}} {_POKEMON_TOKEN} and attach a Basic Energy card from your discard pile to each of them\.$",
+            re.IGNORECASE,
+        ),
+        builder=_attach_basic_energy_discard_to_benched_count,
+    ),
+    TextTemplate(
+        name="card_use_gate_discard_another_card",
+        description="Card can be used only if you discard another card.",
+        pattern=re.compile(
+            r"^You can use this card only if you discard another card from your hand\.$",
+            re.IGNORECASE,
+        ),
+        builder=_card_use_gate_discard_another_card,
+    ),
+    TextTemplate(
+        name="conditional_draw_until_if_all_team_rocket",
+        description="If all in-play Pokémon are Team Rocket's, draw until hand size.",
+        pattern=re.compile(
+            rf"^If all of your {_POKEMON_TOKEN} in play are Team Rocket's {_POKEMON_TOKEN}, draw cards until you have (?P<count>\d+) cards in your hand instead\.$",
+            re.IGNORECASE,
+        ),
+        builder=_conditional_draw_until_if_all_team_rocket,
+    ),
+    TextTemplate(
+        name="then_shuffle_deck",
+        description="Then, shuffle your deck.",
+        pattern=re.compile(r"^Then, shuffle your deck\.$", re.IGNORECASE),
+        builder=_then_shuffle_deck,
+    ),
+    TextTemplate(
+        name="shuffle_hand_into_deck",
+        description="Shuffle your hand into your deck.",
+        pattern=re.compile(r"^Shuffle your hand into your deck\.$", re.IGNORECASE),
+        builder=_shuffle_hand_into_deck,
+    ),
+    TextTemplate(
+        name="then_draw_cards",
+        description="Then, draw a fixed number of cards.",
+        pattern=re.compile(r"^Then, draw (?P<count>\d+) cards\.$", re.IGNORECASE),
+        builder=_then_draw_cards,
+    ),
+    TextTemplate(
+        name="put_other_card_on_bottom",
+        description="Put the other card on the bottom of your deck.",
+        pattern=re.compile(r"^Put the other card on the bottom of your deck\.$", re.IGNORECASE),
+        builder=_put_other_card_on_bottom,
+    ),
+    TextTemplate(
+        name="conditional_draw_by_prize_state",
+        description="Conditional draw based on prize-card state.",
+        pattern=re.compile(
+            r"^If (?P<condition>.+? Prize cards? remaining), draw (?P<count>\d+) cards instead\.$",
+            re.IGNORECASE,
+        ),
+        builder=_conditional_draw_by_prize_state,
+    ),
+    TextTemplate(
+        name="as_often_use_ability_note",
+        description="As often as you like, you may use this Ability.",
+        pattern=re.compile(
+            r"^As often as you like during your turn, you may use this Ability\.$",
+            re.IGNORECASE,
+        ),
+        builder=_as_often_use_ability_note,
+    ),
+    TextTemplate(
+        name="move_basic_energy_between_self_pokemon",
+        description="Move a Basic Energy between your Pokémon.",
+        pattern=re.compile(
+            rf"^Move .+? Energy from (?P<count>\d+) of your {_POKEMON_TOKEN} to another of your {_POKEMON_TOKEN}\.$",
+            re.IGNORECASE,
+        ),
+        builder=_move_basic_energy_between_self_pokemon,
+    ),
+    TextTemplate(
+        name="defending_attack_flip_tails_fails",
+        description="If defending tries to attack, flip tails causes attack failure.",
+        pattern=re.compile(
+            rf"^During your opponent's next turn, if the Defending {_POKEMON_TOKEN} tries to use an attack, your opponent flips a coin\. If tails, that attack doesn't happen\.$",
+            re.IGNORECASE,
+        ),
+        builder=_defending_attack_flip_tails_fails,
+    ),
+    TextTemplate(
+        name="once_if_active_may_use_ability",
+        description="Once during your turn, if this Pokémon is Active, you may use this Ability.",
+        pattern=re.compile(
+            rf"^Once during your turn, if this {_POKEMON_TOKEN} is in the Active Spot, you may use this Ability\.$",
+            re.IGNORECASE,
+        ),
+        builder=_once_if_active_may_use_ability,
+    ),
+    TextTemplate(
+        name="card_use_gate_by_opponent_prizes",
+        description="Card use gate by opponent prize count.",
+        pattern=re.compile(
+            r"^You can use this card only if your opponent has (?P<count>\d+) or fewer Prize cards remaining\.$",
+            re.IGNORECASE,
+        ),
+        builder=_card_use_gate_by_opponent_prizes,
+    ),
+    TextTemplate(
+        name="choose_self_pokemon_in_play",
+        description="Choose one of your Pokémon in play.",
+        pattern=re.compile(
+            rf"^Choose 1 of your {_POKEMON_TOKEN} in play\.$",
+            re.IGNORECASE,
+        ),
+        builder=_choose_self_pokemon_in_play,
+    ),
+    TextTemplate(
+        name="prevent_all_damage_effects_to_that_from_ex",
+        description="Prevent all damage/effects to that Pokémon from ex next turn.",
+        pattern=re.compile(
+            rf"^During your opponent's next turn, prevent all damage from and effects of attacks done to that {_POKEMON_TOKEN} by your opponent's {_POKEMON_TOKEN} ex\.$",
+            re.IGNORECASE,
+        ),
+        builder=_prevent_all_damage_effects_to_that_from_ex,
+    ),
+    TextTemplate(
+        name="recover_pokemon_or_basic_energy_from_discard",
+        description="Put a Pokémon or Basic Energy from discard into hand.",
+        pattern=re.compile(
+            rf"^Put a {_POKEMON_TOKEN} or a Basic Energy card from your discard pile into your hand\.$",
+            re.IGNORECASE,
+        ),
+        builder=_recover_pokemon_or_basic_energy_from_discard,
+    ),
+    TextTemplate(
+        name="status_asleep_and_poisoned",
+        description="Apply both Asleep and Poisoned to opponent Active.",
+        pattern=re.compile(
+            rf"^Your opponent's Active {_POKEMON_TOKEN} is now Asleep and Poisoned\.$",
+            re.IGNORECASE,
+        ),
+        builder=_status_asleep_and_poisoned,
+    ),
+    TextTemplate(
+        name="no_retreat_cost_if_no_energy",
+        description="No retreat cost when this Pokémon has no Energy attached.",
+        pattern=re.compile(
+            rf"^If this {_POKEMON_TOKEN} has no Energy attached, it has no Retreat Cost\.$",
+            re.IGNORECASE,
+        ),
+        builder=_no_retreat_cost_if_no_energy,
+    ),
+    TextTemplate(
+        name="discard_any_amount_energy_among_self",
+        description="Discard any amount of typed Energy from among your Pokémon.",
+        pattern=re.compile(
+            rf"^Discard any amount of \{{[A-Z]\}} Energy from among your {_POKEMON_TOKEN}, and this attack does (?P<amount>\d+) damage for each card you discarded in this way\.$",
+            re.IGNORECASE,
+        ),
+        builder=_discard_any_amount_energy_and_damage,
+    ),
+    TextTemplate(
+        name="damage_for_each_self_pokemon_in_play",
+        description="Damage for each of your Pokémon in play.",
+        pattern=re.compile(
+            rf"^This attack does (?P<amount>\d+) damage for each of your {_POKEMON_TOKEN} in play\.$",
+            re.IGNORECASE,
+        ),
+        builder=_damage_for_each_self_pokemon_in_play,
+    ),
+    TextTemplate(
+        name="damage_more_per_energy_on_self",
+        description="Damage bonus for each Energy attached to this Pokémon.",
+        pattern=re.compile(
+            rf"^This attack does (?P<amount>\d+) more damage for each \{{[A-Z]\}} Energy attached to this {_POKEMON_TOKEN}\.$",
+            re.IGNORECASE,
+        ),
+        builder=_damage_more_per_energy_on_self,
+    ),
+    TextTemplate(
+        name="damage_base_per_prize_taken",
+        description="Base damage for each Prize card opponent has taken.",
+        pattern=re.compile(
+            r"^This attack does (?P<amount>\d+) damage for each Prize card your opponent has taken\.$",
+            re.IGNORECASE,
+        ),
+        builder=_damage_base_per_prize_taken,
     ),
 ]
 

@@ -99,6 +99,21 @@ class RulesMechanicsTests(unittest.TestCase):
         apply_effect_program(program, state, actor="p1")
         self.assertEqual(state["players"]["p2"]["active"]["hp"], 60)
 
+    def test_damage_per_pokemon_in_play_operation(self) -> None:
+        state = create_demo_state()
+        state["players"]["p1"]["bench_size"] = 3
+        program = EffectProgram(
+            source_text="board scaling",
+            operations=[
+                EffectOperation(
+                    op="damage_per_pokemon_in_play",
+                    params={"target": "opponent_active", "amount_per_pokemon": 10, "scope": "self"},
+                )
+            ],
+        )
+        apply_effect_program(program, state, actor="p1")
+        self.assertEqual(state["players"]["p2"]["active"]["hp"], 80)
+
 
 if __name__ == "__main__":
     unittest.main()
