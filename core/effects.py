@@ -101,6 +101,20 @@ def _apply_script_hook_inference(
     clause = str(normalized.params.get("clause", "")).strip()
     opponent = _opponent(actor)
 
+    if hook_id == "conditional_clause":
+        effect_text = str(normalized.params.get("effect", "")).strip()
+        if effect_text:
+            from core.text_compiler import compile_effect_text
+
+            if not effect_text.endswith("."):
+                effect_text = f"{effect_text}."
+            nested = compile_effect_text(effect_text)
+            if nested.is_fully_resolved and nested.operations:
+                for op in nested.operations:
+                    _apply_operation(op, state, actor, rng, events)
+                events.append(f"{actor} resolved scripted conditional by applying nested effect.")
+                return True
+
     if hook_id in {"each-player-shuffles-hand-into-deck", "each-player-shuffle-hand-put-bottom"}:
         state["players"][actor]["hand_size"] = 0
         state["players"][opponent]["hand_size"] = 0
@@ -135,6 +149,26 @@ def _apply_script_hook_inference(
     if hook_id == "your-turn-ends":
         state["players"][actor].setdefault("turn_flags", {})["force_end_turn"] = True
         events.append(f"{actor} resolved scripted hook: turn will end.")
+        return True
+
+    if hook_id in {
+        "as-long-as-generic",
+        "during-opponent-next-turn-generic",
+        "card-use-gate-generic",
+        "generic-when-clause",
+        "generic-whenever-clause",
+        "generic-your-opponent-clause",
+    } and clause:
+        _apply_operation(
+            EffectOperation(
+                op="apply_temporary_rule",
+                params={"target": "self_player", "rule": "script_inferred_rule", "clause": clause},
+            ),
+            state,
+            actor,
+            rng,
+            events,
+        )
         return True
 
     if hook_id == "search-then-shuffle-generic" and clause:
@@ -344,6 +378,60 @@ def _apply_script_hook_inference(
                 )
                 return True
 
+        if hook_id == "generic-put-clause":
+            put_bottom = re.match(r"^Put the other card on the bottom of your deck\.$", clause, flags=re.IGNORECASE)
+            if put_bottom:
+                _apply_operation(
+                    EffectOperation(op="put_card_on_bottom_of_deck", params={"count": 1}),
+                    state,
+                    actor,
+                    rng,
+                    events,
+                )
+                return True
+
+            recover = re.match(r"^Put (?:(?:a|an)|up to (?P<count>\d+)) .+ from your discard pile into your hand\.$", clause, flags=re.IGNORECASE)
+            if recover:
+                count = _parse_count_token(recover.groupdict().get("count"), default=1)
+                if count < 0:
+                    count = 1
+                _apply_operation(
+                    EffectOperation(op="recover_from_discard_to_hand", params={"count": count}),
+                    state,
+                    actor,
+                    rng,
+                    events,
+                )
+                return True
+
+            counters = re.match(r"^Put (?P<count>\d+) damage counters on your opponent's Active (?:Pokemon|Pokémon)\.$", clause, flags=re.IGNORECASE)
+            if counters:
+                _apply_operation(
+                    EffectOperation(op="deal_damage", params={"target": "opponent_active", "amount": int(counters.group("count")) * 10}),
+                    state,
+                    actor,
+                    rng,
+                    events,
+                )
+                return True
+
+        if hook_id == "generic-move-clause":
+            move_energy = re.match(
+                r"^Move (?P<count>\d+|all|any amount of|a|an) .*Energy from .+\.$",
+                clause,
+                flags=re.IGNORECASE,
+            )
+            if move_energy:
+                count = _parse_count_token(move_energy.group("count"), default=1)
+                _apply_operation(
+                    EffectOperation(op="move_energy", params={"source": "self_active", "target": "self_bench", "count": count}),
+                    state,
+                    actor,
+                    rng,
+                    events,
+                )
+                return True
+
         match = re.match(r"^Discard (?P<count>\d+|a|an) cards? from your hand\.$", clause, flags=re.IGNORECASE)
         if match:
             count = _parse_count_token(match.group("count"))
@@ -414,6 +502,19 @@ def _apply_script_hook_inference(
         if re.match(r"^This (?:Pokemon|Pokémon) recovers from all Special Conditions\.$", clause, flags=re.IGNORECASE):
             state["players"][actor]["active"]["status"] = []
             events.append(f"{actor} resolved scripted hook: active recovered from all statuses.")
+            return True
+
+        if re.match(r"^You must discard a Basic \{[A-Z]\} Energy card from your hand in order to use this Ability\.$", clause, flags=re.IGNORECASE):
+            _apply_operation(EffectOperation(op="discard_cards", params={"target": "self_hand", "count": 1}), state, actor, rng, events)
+            return True
+
+        if re.match(
+            r"^Flip a coin for each \{[A-Z]\} (?:Pokemon|Pokémon) you have in play\.$",
+            clause,
+            flags=re.IGNORECASE,
+        ):
+            coin_count = 1 + int(state["players"][actor].get("bench_size", 0))
+            _apply_operation(EffectOperation(op="flip_coins", params={"count": coin_count}), state, actor, rng, events)
             return True
 
         if re.match(r"^Make your opponent's Active (?:Pokemon|Pokémon) Confused\.$", clause, flags=re.IGNORECASE):

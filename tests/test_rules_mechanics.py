@@ -205,6 +205,37 @@ class RulesMechanicsTests(unittest.TestCase):
         apply_effect_program(program, state, actor="p1")
         self.assertEqual(state["players"]["p1"]["hand_size"], 5)
 
+    def test_script_hook_infers_conditional_nested_effect(self) -> None:
+        state = create_demo_state()
+        program = EffectProgram(
+            source_text="conditional nested",
+            operations=[
+                EffectOperation(
+                    op="script_hook",
+                    params={"hook_id": "conditional_clause", "effect": "Draw 2 cards.", "condition": "demo"},
+                )
+            ],
+        )
+        apply_effect_program(program, state, actor="p1")
+        self.assertEqual(state["players"]["p1"]["hand_size"], 7)
+
+    def test_script_hook_infers_generic_put_recover(self) -> None:
+        state = create_demo_state()
+        program = EffectProgram(
+            source_text="recover",
+            operations=[
+                EffectOperation(
+                    op="script_hook",
+                    params={
+                        "hook_id": "generic-put-clause",
+                        "clause": "Put up to 2 Basic Energy cards from your discard pile into your hand.",
+                    },
+                )
+            ],
+        )
+        apply_effect_program(program, state, actor="p1")
+        self.assertEqual(state["players"]["p1"]["hand_size"], 7)
+
 
 if __name__ == "__main__":
     unittest.main()
