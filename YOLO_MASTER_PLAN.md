@@ -149,3 +149,33 @@ All of the following must be true:
 
 - “One go” implementation can deliver major architecture and automation milestones.
 - Final 100% requires iterative template/ruling verification loops by design.
+
+---
+
+## Phase 7 — Semantic De-genericization (completed)
+
+Goal: replace generic fallback semantics with explicit subsystem contracts.
+
+- [x] Track map created (`SYSTEM_COMPLETENESS_MAP.md`)
+- [x] Card-identity runtime model module (`core/state_model.py`)
+- [x] Timing window dispatcher module (`core/timing_windows.py`)
+- [x] Continuous-layer conflict resolver module (`core/effect_layers.py`)
+- [x] Target legality validator module (`core/targeting.py`)
+- [x] Cost payment + rollback transaction module (`core/cost_engine.py`)
+- [x] Setup/opening flow module (`core/setup_engine.py`)
+- [x] Golden ruling harness module (`core/golden_regression.py`)
+- [x] Full-surface legal action generator module (`core/legal_actions_full.py`)
+
+Exit criteria:
+- New semantic modules are test-covered and integrated in repository docs.
+
+---
+
+## Phase 8 — Core Hardening Verification (completed)
+
+- [x] Added dedicated tests for all new hardening modules
+- [x] Full unit suite passes
+- [x] Quality gates and data pipeline health checks pass
+
+Exit criteria:
+- No regressions in deterministic replay and text/runtime coverage guarantees.

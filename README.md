@@ -30,6 +30,22 @@ Complete modular engine with:
   Builds Standard legality snapshots with release-date waiting gates and reprint/errata metadata overlays.
 - `core/quality_gates.py`  
   Runs replay determinism, coverage regression, legality checks, and emits a coverage dashboard artifact.
+- `core/state_model.py`  
+  Strongly typed runtime state model with legacy/demo state adapter.
+- `core/timing_windows.py`  
+  Timing window bus for deterministic trigger dispatch and ordering.
+- `core/effect_layers.py`  
+  Continuous-effect layer resolver for rule stacking and modifier precedence.
+- `core/targeting.py`  
+  Target legality helpers for selector/count validation.
+- `core/cost_engine.py`  
+  Transactional cost payment with rollback safety.
+- `core/setup_engine.py`  
+  Opening/setup phase engine (hand/prize invariants and mulligan flow).
+- `core/golden_regression.py`  
+  Golden-case regression harness for scenario-level semantic checks.
+- `core/legal_actions_full.py`  
+  Expanded legal-action surface with reasoned legality metadata.
 - `core/trainer_lifecycle.py`  
   Enforces trainer lifecycle constraints (Supporter/Stadium/Tool limits by turn and board legality).
 - `core/reprint_errata.py`  
