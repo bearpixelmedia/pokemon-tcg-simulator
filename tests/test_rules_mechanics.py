@@ -236,6 +236,20 @@ class RulesMechanicsTests(unittest.TestCase):
         apply_effect_program(program, state, actor="p1")
         self.assertEqual(state["players"]["p1"]["hand_size"], 7)
 
+    def test_script_hook_unknown_uses_passthrough_rule(self) -> None:
+        state = create_demo_state()
+        program = EffectProgram(
+            source_text="passthrough",
+            operations=[
+                EffectOperation(
+                    op="script_hook",
+                    params={"hook_id": "unrecognized-hook", "clause": "Some new future card text."},
+                )
+            ],
+        )
+        events = apply_effect_program(program, state, actor="p1")
+        self.assertTrue(any("passthrough" in event.lower() for event in events))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -527,7 +527,25 @@ def _apply_script_hook_inference(
             )
             return True
 
-    return False
+    # Final safety net: treat any remaining scripted clause as an explicit
+    # temporary-rule effect so all hooks are handled deterministically.
+    _apply_operation(
+        EffectOperation(
+            op="apply_temporary_rule",
+            params={
+                "target": "self_player",
+                "rule": "script_hook_passthrough",
+                "hook_id": hook_id,
+                "clause": clause,
+            },
+        ),
+        state,
+        actor,
+        rng,
+        events,
+    )
+    events.append(f"{actor} resolved scripted hook via generic passthrough: {hook_id}.")
+    return True
 
 
 def apply_effect_program(
