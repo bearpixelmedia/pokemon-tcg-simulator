@@ -3,43 +3,109 @@ from __future__ import annotations
 from typing import Any
 
 from core.cost_engine import pay_cost
+from core.official_rules import MAX_BENCH_SIZE, validate_action_against_rules
 from core.targeting import validate_target_selector
 
 
 def generate_legal_actions_full(state: dict[str, Any], actor: str) -> list[dict[str, Any]]:
     actions: list[dict[str, Any]] = []
+    player = state["players"][actor]
     active = state["players"][actor]["active"]
 
     # Attack preview legality with simple active-energy cost assumption.
     attack_cost = 1
     can_pay_attack = int(active.get("energy_attached", 0)) >= attack_cost
+    action_legal, action_reason = validate_action_against_rules(state, actor, "attack")
     actions.append(
         {
             "action_type": "attack",
-            "legal": can_pay_attack,
-            "reason": "enough active energy" if can_pay_attack else "insufficient active energy",
+            "legal": bool(can_pay_attack and action_legal),
+            "reason": action_reason if not action_legal else ("enough active energy" if can_pay_attack else "insufficient active energy"),
             "cost_preview": {"active_energy": attack_cost},
+            "rule_refs": ["first_turn_no_attack", "attack_cost"],
         }
     )
 
     # Retreat legality with target and cost checks.
     retreat_target = validate_target_selector(state, actor, "self_bench")
     can_retreat = retreat_target.valid and int(active.get("energy_attached", 0)) >= int(active.get("retreat_cost", 1))
+    retreat_rule_legal, retreat_rule_reason = validate_action_against_rules(state, actor, "retreat")
     actions.append(
         {
             "action_type": "retreat",
-            "legal": can_retreat,
-            "reason": "retreat available" if can_retreat else retreat_target.reason or "cannot pay retreat cost",
+            "legal": bool(can_retreat and retreat_rule_legal),
+            "reason": (
+                retreat_rule_reason
+                if not retreat_rule_legal
+                else ("retreat available" if can_retreat else retreat_target.reason or "cannot pay retreat cost")
+            ),
+            "rule_refs": ["retreat_cost", "bench_required"],
         }
     )
 
     # Supporter play preview (hand-card transaction semantics).
-    cost_preview = pay_cost(state={"players": {actor: {"hand_size": state["players"][actor].get("hand_supporters", 0), "active": {"energy_attached": 0}}}}, actor=actor, requirements={"hand_cards": 1})
+    cost_preview = pay_cost(
+        state={"players": {actor: {"hand_size": player.get("hand_supporters", 0), "active": {"energy_attached": 0}}}},
+        actor=actor,
+        requirements={"hand_cards": 1},
+    )
+    supporter_rule_legal, supporter_rule_reason = validate_action_against_rules(state, actor, "play_supporter")
     actions.append(
         {
             "action_type": "play_supporter",
-            "legal": cost_preview.paid,
-            "reason": "supporter available" if cost_preview.paid else "no supporter in hand",
+            "legal": bool(cost_preview.paid and supporter_rule_legal),
+            "reason": supporter_rule_reason if not supporter_rule_legal else ("supporter available" if cost_preview.paid else "no supporter in hand"),
+            "rule_refs": ["first_turn_no_supporter", "supporter_once_per_turn"],
+        }
+    )
+
+    can_stadium = int(player.get("hand_stadiums", 0)) > 0
+    actions.append(
+        {
+            "action_type": "play_stadium",
+            "legal": can_stadium,
+            "reason": "stadium available" if can_stadium else "no stadium in hand",
+            "rule_refs": ["stadium_play_once_per_turn"],
+        }
+    )
+
+    can_tool = int(player.get("hand_tools", 0)) > 0 and not bool(active.get("tool_attached"))
+    actions.append(
+        {
+            "action_type": "attach_tool",
+            "legal": can_tool,
+            "reason": "tool can be attached" if can_tool else "no tool in hand or active already has tool",
+            "rule_refs": ["one_tool_per_pokemon"],
+        }
+    )
+
+    can_evolve = active.get("stage", "Basic") in {"Basic", "Stage1"}
+    actions.append(
+        {
+            "action_type": "evolve",
+            "legal": can_evolve,
+            "reason": "evolution stage available" if can_evolve else "pokemon cannot evolve further",
+            "rule_refs": ["evolution_stage_rules"],
+        }
+    )
+
+    can_devolve = active.get("stage", "Basic") in {"Stage1", "Stage2"}
+    actions.append(
+        {
+            "action_type": "devolve",
+            "legal": can_devolve,
+            "reason": "devolution stage available" if can_devolve else "pokemon is already basic",
+            "rule_refs": ["devolution_stage_rules"],
+        }
+    )
+
+    can_bench = int(player.get("bench_size", 0)) < MAX_BENCH_SIZE
+    actions.append(
+        {
+            "action_type": "bench_pokemon",
+            "legal": can_bench,
+            "reason": "bench slot available" if can_bench else f"bench is full ({MAX_BENCH_SIZE})",
+            "rule_refs": ["max_bench_size"],
         }
     )
 

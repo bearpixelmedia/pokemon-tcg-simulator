@@ -38,6 +38,8 @@ Complete modular engine with:
   Continuous-effect layer resolver for rule stacking and modifier precedence.
 - `core/priority_stack_policy.py`  
   Centralized replacement/prevention priority policy and timing-rule ordering helpers used across runtime modules.
+- `core/official_rules.py`  
+  Official-rule baseline policy for setup, first-turn restrictions, and invariant enforcement.
 - `core/targeting.py`  
   Target legality helpers for selector/count validation.
 - `core/cost_engine.py`  

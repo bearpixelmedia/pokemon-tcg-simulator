@@ -184,6 +184,7 @@ Exit criteria:
 - [x] Added replacement/prevention priority stack semantics for deterministic damage resolution
 - [x] Added turn-end expiry for temporary continuous/stack/timing rules
 - [x] Externalized precedence policy into dedicated stack-policy module (config-driven ordering helpers)
+- [x] Added official-rules baseline module and wired setup/turn legality + invariant enforcement
 
 Exit criteria:
 - No regressions in deterministic replay and text/runtime coverage guarantees.
