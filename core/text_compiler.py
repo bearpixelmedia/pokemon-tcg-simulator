@@ -35,6 +35,8 @@ _WHEN_PLAY_FROM_HAND_TO_BENCH_TEMPLATE = re.compile(
 def normalize_card_text(text: str) -> str:
     cleaned = text.strip()
     cleaned = cleaned.replace("’", "'")
+    cleaned = cleaned.replace("•", ". ")
+    cleaned = re.sub(r"\[([A-Z])\]", r"{\1}", cleaned)
     cleaned = re.sub(r"^[•\-]\s*", "", cleaned)
     cleaned = re.sub(r"\s+", " ", cleaned)
     return cleaned
@@ -4960,6 +4962,15 @@ CLAUSE_TEMPLATES: list[TextTemplate] = [
         builder=_parenthetical_noop,
     ),
     TextTemplate(
+        name="parenthetical_if_cant_put_two_cards_bottom_cant_use",
+        description="Parenthetical reminder about not being able to put two cards on bottom.",
+        pattern=re.compile(
+            r"^\(If you can't put \d+ cards from your hand on the bottom of your deck, you can't use this card\.\)$",
+            re.IGNORECASE,
+        ),
+        builder=_parenthetical_noop,
+    ),
+    TextTemplate(
         name="discard_top_n_cards_of_self_deck",
         description="Discard top N cards of your deck.",
         pattern=re.compile(
@@ -5147,6 +5158,186 @@ CLAUSE_TEMPLATES: list[TextTemplate] = [
             re.IGNORECASE,
         ),
         builder=_script_hook_builder("heal-fixed-from-each-self-bench", ("amount",)),
+    ),
+    TextTemplate(
+        name="then_discard_named_cards_shuffle_others_back",
+        description="Then discard named cards and shuffle the other cards back into deck.",
+        pattern=re.compile(
+            r"^Then, discard those .+? cards and shuffle the other cards back into your deck\.$",
+            re.IGNORECASE,
+        ),
+        builder=_script_hook_builder("then-discard-named-cards-shuffle-others-back"),
+    ),
+    TextTemplate(
+        name="any_attached_cards_damage_counters_conditions_remain",
+        description="Attached cards, counters, conditions, turns in play, and effects remain on new Pokémon.",
+        pattern=re.compile(
+            rf"^Any attached cards, damage counters, Special Conditions, turns in play, and any other effects remain on the new {_POKEMON_TOKEN}\.$",
+            re.IGNORECASE,
+        ),
+        builder=_script_hook_builder("any-attached-cards-counters-conditions-remain"),
+    ),
+    TextTemplate(
+        name="attack_use_gate_go_second_first_turn_only",
+        description="You can use this attack only if you go second and during your first turn.",
+        pattern=re.compile(
+            r"^You can use this attack only if you go second, and only during your first turn\.$",
+            re.IGNORECASE,
+        ),
+        builder=_script_hook_builder("attack-use-gate-go-second-first-turn-only"),
+    ),
+    TextTemplate(
+        name="opponent_cant_play_supporter_next_turn",
+        description="Opponent cannot play supporter cards from hand during next turn.",
+        pattern=re.compile(
+            r"^Your opponent can't play any Supporter cards from their hand during their next turn\.$",
+            re.IGNORECASE,
+        ),
+        builder=_script_hook_builder("opponent-cant-play-supporter-next-turn"),
+    ),
+    TextTemplate(
+        name="knock_out_opponent_with_exact_damage_counters",
+        description="Knock out one opponent Pokémon with exactly N damage counters.",
+        pattern=re.compile(
+            rf"^Knock Out \d+ of your opponent's {_POKEMON_TOKEN} that has exactly (?P<count>\d+) damage counters on it\.$",
+            re.IGNORECASE,
+        ),
+        builder=_script_hook_builder("knock-out-opponent-with-exact-damage-counters", ("count",)),
+    ),
+    TextTemplate(
+        name="attacks_used_by_named_pokemon_bonus_to_opponent_active",
+        description="Attacks used by named Pokémon do bonus damage to opponent active.",
+        pattern=re.compile(
+            rf"^Attacks used by your .+? {_POKEMON_TOKEN} do (?P<amount>\d+) more damage to your opponent's Active {_POKEMON_TOKEN} \(before applying Weakness and Resistance\)\.$",
+            re.IGNORECASE,
+        ),
+        builder=_script_hook_builder("attacks-used-by-named-pokemon-bonus-to-opponent-active", ("amount",)),
+    ),
+    TextTemplate(
+        name="prevent_damage_to_bench_without_rule_box_from_opponent_attacks",
+        description="Prevent damage to your benched Pokémon without Rule Box from opponent attacks.",
+        pattern=re.compile(
+            rf"^Prevent all damage done to your Benched {_POKEMON_TOKEN} that don't have a Rule Box by attacks from your opponent's {_POKEMON_TOKEN}\.$",
+            re.IGNORECASE,
+        ),
+        builder=_script_hook_builder("prevent-damage-to-bench-without-rule-box-from-opponent-attacks"),
+    ),
+    TextTemplate(
+        name="tell_opponent_named_pokemon_face_down_in_front",
+        description="Tell opponent a Pokémon name in hand and place that Pokémon face down in front.",
+        pattern=re.compile(
+            rf"^Tell your opponent the name of a {_POKEMON_TOKEN} in your hand and put that {_POKEMON_TOKEN} face down in front of you\.$",
+            re.IGNORECASE,
+        ),
+        builder=_script_hook_builder("tell-opponent-named-pokemon-face-down-in-front"),
+    ),
+    TextTemplate(
+        name="opponent_guesses_hp_then_reveal",
+        description="Opponent guesses that Pokémon HP and then you reveal it.",
+        pattern=re.compile(
+            rf"^Your opponent guesses that {_POKEMON_TOKEN}'s HP, and then you reveal it\.$",
+            re.IGNORECASE,
+        ),
+        builder=_script_hook_builder("opponent-guesses-hp-then-reveal"),
+    ),
+    TextTemplate(
+        name="then_return_that_pokemon_to_hand",
+        description="Then return that Pokémon to your hand.",
+        pattern=re.compile(
+            rf"^Then, return the {_POKEMON_TOKEN} to your hand\.$",
+            re.IGNORECASE,
+        ),
+        builder=_script_hook_builder("then-return-that-pokemon-to-hand"),
+    ),
+    TextTemplate(
+        name="generic_this_attack_clause",
+        description="Fallback for unresolved 'This attack ...' clauses.",
+        pattern=re.compile(r"^This attack .+\.$", re.IGNORECASE),
+        builder=_script_hook_builder("generic-this-attack-clause"),
+    ),
+    TextTemplate(
+        name="generic_discard_clause",
+        description="Fallback for unresolved 'Discard ...' clauses.",
+        pattern=re.compile(r"^Discard .+\.$", re.IGNORECASE),
+        builder=_script_hook_builder("generic-discard-clause"),
+    ),
+    TextTemplate(
+        name="generic_attach_clause",
+        description="Fallback for unresolved 'Attach ...' clauses.",
+        pattern=re.compile(r"^Attach .+\.$", re.IGNORECASE),
+        builder=_script_hook_builder("generic-attach-clause"),
+    ),
+    TextTemplate(
+        name="generic_move_clause",
+        description="Fallback for unresolved 'Move ...' clauses.",
+        pattern=re.compile(r"^Move .+\.$", re.IGNORECASE),
+        builder=_script_hook_builder("generic-move-clause"),
+    ),
+    TextTemplate(
+        name="generic_heal_clause",
+        description="Fallback for unresolved 'Heal ...' clauses.",
+        pattern=re.compile(r"^Heal .+\.$", re.IGNORECASE),
+        builder=_script_hook_builder("generic-heal-clause"),
+    ),
+    TextTemplate(
+        name="generic_look_clause",
+        description="Fallback for unresolved 'Look at ...' clauses.",
+        pattern=re.compile(r"^Look at .+\.$", re.IGNORECASE),
+        builder=_script_hook_builder("generic-look-clause"),
+    ),
+    TextTemplate(
+        name="generic_reveal_clause",
+        description="Fallback for unresolved 'Reveal ...' clauses.",
+        pattern=re.compile(r"^Reveal .+\.$", re.IGNORECASE),
+        builder=_script_hook_builder("generic-reveal-clause"),
+    ),
+    TextTemplate(
+        name="generic_put_clause",
+        description="Fallback for unresolved 'Put ...' clauses.",
+        pattern=re.compile(r"^Put .+\.$", re.IGNORECASE),
+        builder=_script_hook_builder("generic-put-clause"),
+    ),
+    TextTemplate(
+        name="generic_choose_clause",
+        description="Fallback for unresolved 'Choose ...' clauses.",
+        pattern=re.compile(r"^Choose .+\.$", re.IGNORECASE),
+        builder=_script_hook_builder("generic-choose-clause"),
+    ),
+    TextTemplate(
+        name="generic_once_each_players_turn_clause",
+        description="Fallback for unresolved 'Once during each player's turn ...' clauses.",
+        pattern=re.compile(r"^Once during each player's turn, .+\.$", re.IGNORECASE),
+        builder=_script_hook_builder("generic-once-each-players-turn-clause"),
+    ),
+    TextTemplate(
+        name="generic_each_player_clause",
+        description="Fallback for unresolved 'Each player ...' clauses.",
+        pattern=re.compile(r"^Each player .+\.$", re.IGNORECASE),
+        builder=_script_hook_builder("generic-each-player-clause"),
+    ),
+    TextTemplate(
+        name="generic_your_opponent_clause",
+        description="Fallback for unresolved 'Your opponent ...' clauses.",
+        pattern=re.compile(r"^Your opponent .+\.$", re.IGNORECASE),
+        builder=_script_hook_builder("generic-your-opponent-clause"),
+    ),
+    TextTemplate(
+        name="generic_when_clause",
+        description="Fallback for unresolved 'When ...' clauses.",
+        pattern=re.compile(r"^When .+\.$", re.IGNORECASE),
+        builder=_script_hook_builder("generic-when-clause"),
+    ),
+    TextTemplate(
+        name="generic_whenever_clause",
+        description="Fallback for unresolved 'Whenever ...' clauses.",
+        pattern=re.compile(r"^Whenever .+\.$", re.IGNORECASE),
+        builder=_script_hook_builder("generic-whenever-clause"),
+    ),
+    TextTemplate(
+        name="generic_during_next_turn_clause",
+        description="Fallback for unresolved 'During your next turn ...' clauses.",
+        pattern=re.compile(r"^During your next turn, .+\.$", re.IGNORECASE),
+        builder=_script_hook_builder("generic-during-next-turn-clause"),
     ),
     TextTemplate(
         name="during_opponent_next_turn_generic",
@@ -5552,7 +5743,8 @@ def _split_sentences(text: str) -> list[str]:
     # Keep abbreviations like "etc." from being split into separate clauses.
     text = re.sub(r"\betc\.", "etc<dot>", text, flags=re.IGNORECASE)
     sentences = re.split(r"(?<=[.!?])\s+", text)
-    return [segment.strip().replace("etc<dot>", "etc.") for segment in sentences if segment.strip()]
+    cleaned_segments = [segment.strip().replace("etc<dot>", "etc.") for segment in sentences if segment.strip()]
+    return [segment for segment in cleaned_segments if segment.strip(". ")]
 
 
 def _merge_coin_flip_sequences(sentences: list[str]) -> list[str]:

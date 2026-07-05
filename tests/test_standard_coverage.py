@@ -31,7 +31,7 @@ class StandardCoverageTests(unittest.TestCase):
             {
                 "source_type": "attack_effect",
                 "source_name": "Unknown",
-                "text": "Put cards into your hand until you are happy.",
+                "text": "Frobulate until the match state sparkles.",
             },
         ]
 

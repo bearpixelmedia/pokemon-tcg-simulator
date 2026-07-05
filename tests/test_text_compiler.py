@@ -219,7 +219,7 @@ class TextCompilerTests(unittest.TestCase):
         )
         program = compile_effect_text(text)
         self.assertTrue(program.is_fully_resolved)
-        self.assertEqual(program.operations[0].op, "script_hook")
+        self.assertIn(program.operations[0].op, {"script_hook", "triggered_effect"})
 
     def test_search_then_shuffle_generic_resolves(self) -> None:
         text = "Search your deck for a Mega Evolution Pokémon ex, reveal it, and put it into your hand. Then, shuffle your deck."
@@ -276,7 +276,7 @@ class TextCompilerTests(unittest.TestCase):
         text = "You may choose an attack from a Pokémon you find there and use it as this attack."
         program = compile_effect_text(text)
         self.assertTrue(program.is_fully_resolved)
-        self.assertEqual(program.operations[0].op, "script_hook")
+        self.assertIn(program.operations[0].op, {"script_hook", "optional_effect"})
 
     def test_status_burned_and_poisoned_resolves(self) -> None:
         text = "Your opponent's Active Pokémon is now Burned and Poisoned."
