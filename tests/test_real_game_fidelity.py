@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 from typing import Any
 
-from core.real_game_fidelity import run_real_game_fixture
+from core.real_game_fidelity import run_real_game_fixture, run_real_game_fixture_suite
 
 
 FIXTURE_DIR = Path(__file__).resolve().parent / "fixtures" / "real_games"
@@ -38,6 +38,11 @@ class RealGameFidelityTests(unittest.TestCase):
                     continue
                 actual_snapshot = result["turns"][turn_index - 1]["snapshot"]
                 _assert_subset(self, expected_snapshot, actual_snapshot, path=f"{fixture_path.name}.turn{turn_index}")
+
+    def test_real_game_fixture_suite_reports_passed(self) -> None:
+        report = run_real_game_fixture_suite(FIXTURE_DIR)
+        self.assertGreaterEqual(report["count"], 2)
+        self.assertTrue(report["passed"])
 
 
 if __name__ == "__main__":

@@ -7,6 +7,7 @@ from core.data_pipeline import run_pipeline_health_check
 from core.fidelity_audit import run_strict_fidelity_audit
 from core.legality_snapshot import build_standard_legality_snapshot
 from core.quality_gates import run_quality_gates
+from core.real_game_fidelity import run_real_game_fixture_suite
 from core.standard_coverage import run_standard_coverage_analysis
 from core.text_compiler import compile_effect_text, supported_templates
 from core.template_mining import mine_unresolved_templates
@@ -186,4 +187,10 @@ def run_fidelity_audit(
         limit_cards=limit_cards,
         manifest_path=manifest_path,
     )
+
+
+def run_real_game_fidelity_suite(
+    fixture_path: str = "tests/fixtures/real_games",
+) -> dict[str, Any]:
+    return run_real_game_fixture_suite(path=fixture_path)
 

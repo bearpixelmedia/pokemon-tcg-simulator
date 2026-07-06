@@ -85,3 +85,64 @@ def run_real_game_fixture(path: str | Path) -> dict[str, Any]:
     result = run_real_game_trace(payload)
     result["fixture_path"] = str(fixture_path)
     return result
+
+
+def _collect_subset_mismatches(expected: Any, actual: Any, path: str = "root") -> list[str]:
+    mismatches: list[str] = []
+    if isinstance(expected, dict):
+        if not isinstance(actual, dict):
+            return [f"{path}: expected dict"]
+        for key, value in expected.items():
+            if key not in actual:
+                mismatches.append(f"{path}: missing key '{key}'")
+                continue
+            mismatches.extend(_collect_subset_mismatches(value, actual[key], f"{path}.{key}"))
+        return mismatches
+    if isinstance(expected, list):
+        if expected != actual:
+            mismatches.append(f"{path}: expected {expected!r}, got {actual!r}")
+        return mismatches
+    if expected != actual:
+        mismatches.append(f"{path}: expected {expected!r}, got {actual!r}")
+    return mismatches
+
+
+def run_real_game_fixture_suite(path: str | Path = "tests/fixtures/real_games") -> dict[str, Any]:
+    suite_path = Path(path)
+    if not suite_path.exists():
+        return {"path": str(suite_path), "count": 0, "passed": False, "cases": []}
+
+    case_results: list[dict[str, Any]] = []
+    for fixture_path in sorted(suite_path.glob("*.json")):
+        payload = json.loads(fixture_path.read_text(encoding="utf-8"))
+        result = run_real_game_trace(payload)
+        mismatches: list[str] = []
+        for turn_index, fixture_turn in enumerate(payload.get("turns", []), start=1):
+            expected_snapshot = fixture_turn.get("expected_snapshot")
+            if expected_snapshot is None:
+                continue
+            actual_snapshot = result["turns"][turn_index - 1]["snapshot"]
+            mismatches.extend(
+                _collect_subset_mismatches(
+                    expected_snapshot,
+                    actual_snapshot,
+                    path=f"{fixture_path.name}.turn{turn_index}",
+                )
+            )
+        case_results.append(
+            {
+                "name": payload.get("name", fixture_path.stem),
+                "fixture_path": str(fixture_path),
+                "turn_count": len(result["turns"]),
+                "passed": len(mismatches) == 0,
+                "mismatches": mismatches,
+            }
+        )
+
+    passed = bool(case_results) and all(case["passed"] for case in case_results)
+    return {
+        "path": str(suite_path),
+        "count": len(case_results),
+        "passed": passed,
+        "cases": case_results,
+    }
