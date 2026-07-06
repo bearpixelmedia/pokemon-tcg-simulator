@@ -1,0 +1,31 @@
+{
+  "name": "single_prize_ko_with_promotion",
+  "turns": [
+    {
+      "actor": "p1",
+      "operations": [
+        {
+          "op": "deal_damage",
+          "params": {
+            "target": "opponent_active",
+            "amount": 130
+          }
+        }
+      ],
+      "expected_snapshot": {
+        "players": {
+          "p1": {
+            "prizes_remaining": 5,
+            "hand_size": 6
+          },
+          "p2": {
+            "active_card_id": "p2-bench-1",
+            "active_hp": 120,
+            "bench_size": 1,
+            "out_of_pokemon": false
+          }
+        }
+      }
+    }
+  ]
+}
