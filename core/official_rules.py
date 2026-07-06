@@ -193,8 +193,29 @@ def validate_action_against_rules(
         return False, "opening player cannot play Supporter on first turn"
 
     player = state["players"][actor]
-    if action_type == "retreat" and int(player.get("bench_size", 0)) <= 0:
+    flags = player.setdefault("turn_flags", {})
+    active = player.get("active", {}) if isinstance(player.get("active"), dict) else {}
+    bench = player.get("bench", [])
+    bench_size = len(bench) if isinstance(bench, list) else int(player.get("bench_size", 0))
+
+    if action_type == "retreat" and bench_size <= 0:
         return False, "cannot retreat without a benched Pokémon"
+    if action_type == "retreat" and any(status in {"Asleep", "Paralyzed"} for status in active.get("status", [])):
+        return False, "active status prevents retreat"
+    if action_type == "play_supporter" and bool(flags.get("supporter_played", False)):
+        return False, "supporter already played this turn"
+    if action_type == "play_stadium" and bool(flags.get("stadium_played", False)):
+        return False, "stadium already played this turn"
+    if action_type == "attach_tool" and bool(flags.get("tool_attached", False)):
+        return False, "tool already attached this turn"
+    if action_type == "attach_tool" and bool(active.get("tool_attached", False)):
+        return False, "active pokemon already has a tool attached"
+    if action_type == "bench_pokemon" and bench_size >= MAX_BENCH_SIZE:
+        return False, f"bench is full ({MAX_BENCH_SIZE})"
+    if action_type == "evolve" and bool(active.get("just_played_this_turn", False)):
+        return False, "pokemon cannot evolve on the turn it was played"
+    if action_type == "evolve" and bool(active.get("evolved_this_turn", False)):
+        return False, "pokemon already evolved this turn"
 
     return True, "legal by official baseline rules"
 

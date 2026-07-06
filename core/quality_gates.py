@@ -5,9 +5,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from core.battle_state import zone_conservation_report
+from core.effects import create_demo_state
 from core.fidelity_audit import run_strict_fidelity_audit
 from core.golden_regression import run_golden_suite
 from core.legality_snapshot import build_standard_legality_snapshot
+from core.real_game_fidelity import run_real_game_fixture_suite
+from core.setup_engine import run_setup_phase
 from core.standard_coverage import run_standard_coverage_analysis
 from core.turn_engine import verify_seed_replay
 
@@ -74,7 +78,9 @@ def run_quality_gates(
     baseline_path: str | Path = DEFAULT_BASELINE_PATH,
     golden_suite_path: str | Path | None = DEFAULT_GOLDEN_SUITE_PATH,
     fidelity_manifest_path: str | Path = "artifacts/fidelity/hook_manifest_latest.json",
+    real_game_fixture_path: str | Path = "tests/fixtures/real_games",
     min_replay_checks: int = 3,
+    max_script_hook_share_percent: float = 20.0,
     update_baseline: bool = False,
     force_refresh: bool = False,
 ) -> dict[str, Any]:
@@ -100,6 +106,10 @@ def run_quality_gates(
     fidelity_pass = float(
         fidelity_report.get("script_hook_registration", {}).get("percent", 0.0)
     ) >= 100.0
+    script_hook_share = float(
+        fidelity_report.get("operation_mix", {}).get("script_hook_share_percent", 100.0)
+    )
+    script_hook_share_pass = script_hook_share <= max_script_hook_share_percent
 
     golden_report: dict[str, Any] | None = None
     golden_pass = True
@@ -115,6 +125,14 @@ def run_quality_gates(
             golden_pass = int(suite_result.get("count", 0)) > 0
         else:
             golden_report = {"path": str(suite_path), "count": 0, "executed": False}
+
+    real_game_report = run_real_game_fixture_suite(real_game_fixture_path)
+    real_game_pass = bool(real_game_report.get("passed", False))
+
+    state = create_demo_state()
+    run_setup_phase(state, seed=777)
+    conservation_report = zone_conservation_report(state)
+    conservation_pass = bool(conservation_report.get("all_passed", False))
 
     baseline = _load_json(baseline_file)
     current_resolution = float(coverage.get("summary", {}).get("text_resolution_percent", 0))
@@ -136,14 +154,32 @@ def run_quality_gates(
             },
         )
 
-    quality_pass = bool(replay_pass and golden_pass and fidelity_pass and not regression)
+    quality_pass = bool(
+        replay_pass
+        and golden_pass
+        and fidelity_pass
+        and script_hook_share_pass
+        and real_game_pass
+        and conservation_pass
+        and not regression
+    )
     payload = {
         "quality_pass": quality_pass,
         "coverage": coverage.get("summary", {}),
         "legality": legality.get("summary", {}),
         "replay_checks": replay_results,
         "strict_fidelity": fidelity_report,
+        "fidelity_thresholds": {
+            "max_script_hook_share_percent": max_script_hook_share_percent,
+            "actual_script_hook_share_percent": script_hook_share,
+            "script_hook_share_pass": script_hook_share_pass,
+        },
         "golden_regression": golden_report,
+        "real_game_fidelity": real_game_report,
+        "zone_conservation": {
+            "passed": conservation_pass,
+            "report": conservation_report,
+        },
         "baseline": {
             "path": str(baseline_file),
             "exists": baseline is not None,

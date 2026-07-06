@@ -1,0 +1,68 @@
+{
+  "name": "status_and_multi_prize_no_bench",
+  "initial_state": {
+    "players": {
+      "p2": {
+        "bench": [],
+        "bench_size": 0,
+        "active": {
+          "prize_value": 2,
+          "hp": 80,
+          "max_hp": 120
+        }
+      }
+    }
+  },
+  "turns": [
+    {
+      "actor": "p1",
+      "operations": [
+        {
+          "op": "apply_status",
+          "params": {
+            "target": "opponent_active",
+            "status": "Poisoned"
+          }
+        }
+      ],
+      "expected_snapshot": {
+        "players": {
+          "p1": {
+            "prizes_remaining": 6
+          },
+          "p2": {
+            "active_status": [
+              "Poisoned"
+            ],
+            "prizes_remaining": 6
+          }
+        }
+      }
+    },
+    {
+      "actor": "p1",
+      "operations": [
+        {
+          "op": "deal_damage",
+          "params": {
+            "target": "opponent_active",
+            "amount": 100
+          }
+        }
+      ],
+      "expected_snapshot": {
+        "players": {
+          "p1": {
+            "prizes_remaining": 4,
+            "hand_size": 7
+          },
+          "p2": {
+            "active_card_id": "p2-no-active",
+            "out_of_pokemon": true,
+            "bench_size": 0
+          }
+        }
+      }
+    }
+  ]
+}

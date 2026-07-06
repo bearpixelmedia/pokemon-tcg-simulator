@@ -44,6 +44,24 @@ class OfficialRulesTests(unittest.TestCase):
         self.assertIsNotNone(state["players"]["p2"].get("active"))
         self.assertTrue(any("mulligan" in event.lower() for event in events))
 
+    def test_supporter_once_per_turn_rule_blocks_second_play(self) -> None:
+        state = create_demo_state()
+        run_official_setup(state, seed=4, opening_player="p1")
+        set_turn_context(state, actor="p2", turn=2)
+        state["players"]["p2"]["turn_flags"] = {"supporter_played": True}
+        ok, reason = validate_action_against_rules(state, "p2", "play_supporter")
+        self.assertFalse(ok)
+        self.assertIn("supporter", reason)
+
+    def test_evolve_rules_block_just_played_pokemon(self) -> None:
+        state = create_demo_state()
+        run_official_setup(state, seed=6, opening_player="p1")
+        set_turn_context(state, actor="p1", turn=2)
+        state["players"]["p1"]["active"]["just_played_this_turn"] = True
+        ok, reason = validate_action_against_rules(state, "p1", "evolve")
+        self.assertFalse(ok)
+        self.assertIn("cannot evolve", reason)
+
 
 if __name__ == "__main__":
     unittest.main()
