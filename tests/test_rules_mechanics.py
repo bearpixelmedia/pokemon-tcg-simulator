@@ -19,9 +19,13 @@ class RulesMechanicsTests(unittest.TestCase):
         state = create_demo_state()
         state["players"]["p1"]["bench_size"] = 1
         state["players"]["p1"]["active"]["energy_attached"] = 1
+        original_active = state["players"]["p1"]["active"]["card_id"]
+        promoted = state["players"]["p1"]["bench"][0]["card_id"]
         ok, events = attempt_retreat(state, "p1")
         self.assertTrue(ok)
         self.assertTrue(any("retreated" in event for event in events))
+        self.assertEqual(state["players"]["p1"]["active"]["card_id"], promoted)
+        self.assertTrue(any(pokemon["card_id"] == original_active for pokemon in state["players"]["p1"]["bench"]))
 
     def test_evolve_and_devolve_progression(self) -> None:
         state = create_demo_state()
@@ -35,10 +39,16 @@ class RulesMechanicsTests(unittest.TestCase):
 
     def test_knockout_awards_prize(self) -> None:
         state = create_demo_state()
+        knocked_out_id = state["players"]["p2"]["active"]["card_id"]
         state["players"]["p2"]["active"]["hp"] = 0
+        prior_discard = len(state["players"]["p2"]["discard_pile"])
         events = resolve_knockouts_and_prizes(state)
         self.assertTrue(any("Knocked Out" in event for event in events))
         self.assertEqual(state["players"]["p1"]["prizes_remaining"], 5)
+        self.assertGreaterEqual(len(state["players"]["p2"]["discard_pile"]), prior_discard + 1)
+        self.assertTrue(
+            any(item.get("card_id") == knocked_out_id for item in state["players"]["p2"]["discard_pile"] if isinstance(item, dict))
+        )
 
     def test_damage_reduction_and_prevent_hook(self) -> None:
         state = create_demo_state()

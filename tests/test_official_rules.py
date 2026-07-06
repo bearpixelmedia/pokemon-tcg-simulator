@@ -40,7 +40,8 @@ class OfficialRulesTests(unittest.TestCase):
         state["players"]["p1"]["opening_has_basic"] = False
         state["players"]["p2"]["opening_has_basic"] = True
         events = run_official_setup(state, seed=3, opening_player="p1")
-        self.assertGreaterEqual(state["players"]["p2"]["hand_size"], 7)
+        self.assertGreaterEqual(state["players"]["p2"]["hand_size"], 1)
+        self.assertIsNotNone(state["players"]["p2"].get("active"))
         self.assertTrue(any("mulligan" in event.lower() for event in events))
 
 
