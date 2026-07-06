@@ -225,7 +225,7 @@ class TextCompilerTests(unittest.TestCase):
         text = "Search your deck for a Mega Evolution Pokémon ex, reveal it, and put it into your hand. Then, shuffle your deck."
         program = compile_effect_text(text)
         self.assertTrue(program.is_fully_resolved)
-        self.assertEqual(program.operations[0].op, "script_hook")
+        self.assertEqual([op.op for op in program.operations], ["search_deck_to_hand", "shuffle_deck"])
 
     def test_limit_named_ability_phrase_each_turn_resolves(self) -> None:
         text = 'You can\'t use more than 1 Ability that has "Last-Ditch" in its name each turn.'
@@ -310,6 +310,29 @@ class TextCompilerTests(unittest.TestCase):
         program = compile_effect_text(text)
         self.assertTrue(program.is_fully_resolved)
         self.assertEqual(len(program.operations), 3)
+
+    def test_this_attack_damage_per_attached_energy_resolves_native(self) -> None:
+        text = "This attack does 30 more damage for each {G} Energy attached to this Pokémon."
+        program = compile_effect_text(text)
+        self.assertTrue(program.is_fully_resolved)
+        self.assertEqual(program.operations[0].op, "damage_per_attached_energy")
+        self.assertEqual(program.operations[0].params["amount_per_energy"], 30)
+
+    def test_during_opponent_next_turn_attach_energy_counter_clause_resolves_native(self) -> None:
+        text = (
+            "During your opponent's next turn, whenever they attach an Energy card from their hand to the Defending Pokémon, "
+            "place 8 damage counters on it."
+        )
+        program = compile_effect_text(text)
+        self.assertTrue(program.is_fully_resolved)
+        self.assertEqual(program.operations[0].op, "apply_temporary_rule")
+        self.assertEqual(program.operations[0].params["damage_counters"], 8)
+
+    def test_then_shuffle_those_cards_into_deck_resolves_native(self) -> None:
+        text = "Then, shuffle those cards into your deck."
+        program = compile_effect_text(text)
+        self.assertTrue(program.is_fully_resolved)
+        self.assertEqual(program.operations[0].op, "shuffle_deck")
 
 
 if __name__ == "__main__":

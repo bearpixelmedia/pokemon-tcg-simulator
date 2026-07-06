@@ -104,6 +104,21 @@ def _script_hook_builder(hook_id: str, group_names: tuple[str, ...] = ()) -> Cal
     return _builder
 
 
+_LOW_PRIORITY_TEMPLATE_NAMES = {
+    "as_long_as_generic",
+    "during_opponent_next_turn_generic",
+    "search_then_shuffle_generic",
+}
+
+
+def _is_low_priority_fallback_template(template_name: str) -> bool:
+    if template_name in _LOW_PRIORITY_TEMPLATE_NAMES:
+        return True
+    if template_name.startswith("generic_"):
+        return True
+    return template_name.endswith("_generic")
+
+
 def _looks_like_tcg_clause(clause: str) -> bool:
     return bool(
         re.search(
@@ -245,7 +260,65 @@ def _search_deck_to_hand_multi(match: re.Match[str]) -> list[EffectOperation]:
     ]
 
 
+def _search_then_shuffle_to_hand_generic(match: re.Match[str]) -> list[EffectOperation]:
+    descriptor = normalize_card_text(match.group("descriptor"))
+    count = _coerce_count(match.group("count"))
+    if count < 0:
+        count = 1
+    return [
+        EffectOperation(
+            op="search_deck_to_hand",
+            params={
+                "count": count,
+                "descriptor": descriptor,
+                "reveal": True,
+                "allow_less": True,
+            },
+        ),
+        EffectOperation(op="shuffle_deck", params={"target": "self_player"}),
+    ]
+
+
+def _search_then_shuffle_to_bench_generic(match: re.Match[str]) -> list[EffectOperation]:
+    descriptor = normalize_card_text(match.group("descriptor"))
+    count = _coerce_count(match.group("count"))
+    if count < 0:
+        count = 1
+    return [
+        EffectOperation(
+            op="search_deck_to_bench",
+            params={
+                "count": count,
+                "descriptor": descriptor,
+                "allow_less": True,
+            },
+        ),
+        EffectOperation(op="shuffle_deck", params={"target": "self_player"}),
+    ]
+
+
+def _search_then_shuffle_attach_generic(match: re.Match[str]) -> list[EffectOperation]:
+    count = _coerce_count(match.group("count"))
+    if count < 0:
+        count = 1
+    return [
+        EffectOperation(
+            op="attach_energy",
+            params={
+                "source": "deck",
+                "count": count,
+            },
+        ),
+        EffectOperation(op="shuffle_deck", params={"target": "self_player"}),
+    ]
+
+
 def _shuffle_deck(match: re.Match[str]) -> list[EffectOperation]:
+    _ = match
+    return [EffectOperation(op="shuffle_deck", params={"target": "self_player"})]
+
+
+def _shuffle_those_cards_into_deck(match: re.Match[str]) -> list[EffectOperation]:
     _ = match
     return [EffectOperation(op="shuffle_deck", params={"target": "self_player"})]
 
@@ -258,6 +331,50 @@ def _switch_self_active(match: re.Match[str]) -> list[EffectOperation]:
 def _switch_opponent_active(match: re.Match[str]) -> list[EffectOperation]:
     _ = match
     return [EffectOperation(op="switch_active_with_bench", params={"target": "opponent_player"})]
+
+
+def _this_attack_damage_per_attached_energy(match: re.Match[str]) -> list[EffectOperation]:
+    return [
+        EffectOperation(
+            op="damage_per_attached_energy",
+            params={
+                "target": "self_active",
+                "amount_per_energy": int(match.group("amount")),
+                "kind": "bonus" if match.groupdict().get("kind") else "base",
+            },
+        )
+    ]
+
+
+def _move_basic_energy_between_own_pokemon(match: re.Match[str]) -> list[EffectOperation]:
+    count_raw = match.groupdict().get("count")
+    count = _coerce_count(count_raw) if count_raw else 1
+    return [
+        EffectOperation(
+            op="move_energy",
+            params={
+                "source": "self_pokemon",
+                "target": "self_pokemon",
+                "count": count,
+            },
+        )
+    ]
+
+
+def _during_opponent_next_turn_attach_energy_damage_counter(match: re.Match[str]) -> list[EffectOperation]:
+    return [
+        EffectOperation(
+            op="apply_temporary_rule",
+            params={
+                "target": "self_player",
+                "rule": "opponent_attach_energy_places_damage_counters",
+                "turns": 1,
+                "kind": "normal",
+                "damage_counters": int(match.group("count")),
+                "clause": match.group(0),
+            },
+        )
+    ]
 
 
 def _search_deck_to_bench_multi(match: re.Match[str]) -> list[EffectOperation]:
@@ -5329,6 +5446,15 @@ CLAUSE_TEMPLATES: list[TextTemplate] = [
         builder=_script_hook_builder("then-return-that-pokemon-to-hand"),
     ),
     TextTemplate(
+        name="this_attack_damage_per_attached_typed_energy",
+        description="This attack scales damage by energy attached to this Pokémon.",
+        pattern=re.compile(
+            rf"^This attack does (?P<amount>\d+) (?P<kind>more )?damage for each \{{[A-Z]\}} Energy attached to this {_POKEMON_TOKEN}\.$",
+            re.IGNORECASE,
+        ),
+        builder=_this_attack_damage_per_attached_energy,
+    ),
+    TextTemplate(
         name="generic_this_attack_clause",
         description="Fallback for unresolved 'This attack ...' clauses.",
         pattern=re.compile(r"^This attack .+\.$", re.IGNORECASE),
@@ -5425,6 +5551,15 @@ CLAUSE_TEMPLATES: list[TextTemplate] = [
         builder=_script_hook_builder("during-opponent-next-turn-generic"),
     ),
     TextTemplate(
+        name="during_opponent_next_turn_when_attach_energy_place_damage_counters",
+        description="During opponent next turn, attaching energy to Defending Pokémon places damage counters.",
+        pattern=re.compile(
+            rf"^During your opponent's next turn, whenever they attach an Energy card from their hand to the Defending {_POKEMON_TOKEN}, place (?P<count>\d+) damage counters on it\.$",
+            re.IGNORECASE,
+        ),
+        builder=_during_opponent_next_turn_attach_energy_damage_counter,
+    ),
+    TextTemplate(
         name="as_long_as_generic",
         description="Generic as-long-as clause fallback.",
         pattern=re.compile(r"^As long as .+\.$", re.IGNORECASE),
@@ -5456,6 +5591,33 @@ CLAUSE_TEMPLATES: list[TextTemplate] = [
             re.IGNORECASE,
         ),
         builder=_script_hook_builder("search-then-shuffle-generic"),
+    ),
+    TextTemplate(
+        name="search_then_shuffle_to_hand_without_card_keyword",
+        description="Search deck for descriptor, reveal optionally, put into hand, then shuffle.",
+        pattern=re.compile(
+            r"^Search your deck for (?:up to )?(?P<count>\d+|a|an) (?P<descriptor>.+?)(?:, reveal (?:it|them),)? and put (?:them|it) into your hand\. Then, shuffle your deck\.$",
+            re.IGNORECASE,
+        ),
+        builder=_search_then_shuffle_to_hand_generic,
+    ),
+    TextTemplate(
+        name="search_then_shuffle_to_bench_generic_native",
+        description="Search deck for descriptor and put onto bench, then shuffle.",
+        pattern=re.compile(
+            rf"^Search your deck for (?:up to )?(?P<count>\d+|a|an) (?P<descriptor>.+?) and put (?:them|it) onto your Bench\. Then, shuffle your deck\.$",
+            re.IGNORECASE,
+        ),
+        builder=_search_then_shuffle_to_bench_generic,
+    ),
+    TextTemplate(
+        name="search_then_shuffle_attach_generic_native",
+        description="Search deck for descriptor and attach it, then shuffle.",
+        pattern=re.compile(
+            r"^Search your deck for (?:up to )?(?P<count>\d+|a|an) .+ and attach (?:them|it) to .+\. Then, shuffle your deck\.$",
+            re.IGNORECASE,
+        ),
+        builder=_search_then_shuffle_attach_generic,
     ),
     TextTemplate(
         name="pokemon_in_play_lose_self_ko_abilities",
@@ -5651,6 +5813,12 @@ CLAUSE_TEMPLATES: list[TextTemplate] = [
         description="Then, shuffle your deck.",
         pattern=re.compile(r"^Then, shuffle your deck\.$", re.IGNORECASE),
         builder=_then_shuffle_deck,
+    ),
+    TextTemplate(
+        name="then_shuffle_those_cards_into_deck_native",
+        description="Then, shuffle those cards into your deck.",
+        pattern=re.compile(r"^Then, shuffle those cards into your deck\.$", re.IGNORECASE),
+        builder=_shuffle_those_cards_into_deck,
     ),
     TextTemplate(
         name="shuffle_hand_into_deck",
@@ -6052,10 +6220,18 @@ def _compile_clause(clause: str) -> tuple[list[EffectOperation], str | None]:
             "coin_flip_single_branch",
         )
 
+    deferred_fallback_match: tuple[TextTemplate, re.Match[str]] | None = None
     for template in CLAUSE_TEMPLATES:
         match = template.pattern.fullmatch(clause)
         if match:
+            if _is_low_priority_fallback_template(template.name):
+                deferred_fallback_match = deferred_fallback_match or (template, match)
+                continue
             return template.builder(match), template.name
+
+    if deferred_fallback_match is not None:
+        template, match = deferred_fallback_match
+        return template.builder(match), template.name
 
     if " and " in clause.lower() and not clause.lower().startswith("if "):
         parts = [part.strip() for part in re.split(r"\band\b", clause, flags=re.IGNORECASE) if part.strip()]
