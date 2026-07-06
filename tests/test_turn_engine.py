@@ -3,7 +3,7 @@ import unittest
 
 from core.effect_types import EffectOperation, EffectProgram
 from core.effects import apply_effect_program, create_demo_state
-from core.turn_engine import TurnPhase, run_turn_based_simulation, verify_seed_replay
+from core.turn_engine import TurnPhase, _winner_from_state, run_turn_based_simulation, verify_seed_replay
 
 
 class TurnEngineTests(unittest.TestCase):
@@ -64,6 +64,12 @@ class TurnEngineTests(unittest.TestCase):
 
         self.assertEqual(statuses, ["Paralyzed"])
         self.assertEqual(state["players"]["p1"]["active"].get("paralyzed_turns_remaining"), 1)
+
+    def test_winner_is_draw_when_both_players_are_out_of_pokemon(self) -> None:
+        state = create_demo_state()
+        state["players"]["p1"]["out_of_pokemon"] = True
+        state["players"]["p2"]["out_of_pokemon"] = True
+        self.assertEqual(_winner_from_state(state), "Draw")
 
 
 if __name__ == "__main__":

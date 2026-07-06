@@ -106,40 +106,85 @@ def attempt_devolve(state: dict[str, Any], actor: str) -> tuple[bool, list[str]]
 def resolve_knockouts_and_prizes(state: dict[str, Any]) -> list[str]:
     ensure_battle_state(state)
     events: list[str] = []
-    for owner, opponent in (("p1", "p2"), ("p2", "p1")):
-        owner_player = state["players"][owner]
-        opponent_player = state["players"][opponent]
-        owner_active = state["players"][owner]["active"]
-        if int(owner_active.get("hp", 0)) > 0:
+    ko_owners: list[str] = []
+    for owner in ("p1", "p2"):
+        active = state["players"][owner].get("active", {})
+        if not isinstance(active, dict):
             continue
+        if bool(active.get("no_active_placeholder", False)):
+            continue
+        if int(active.get("hp", 0)) <= 0:
+            ko_owners.append(owner)
 
+    if not ko_owners:
+        return events
+
+    # Resolve all knockout packets first so simultaneous KOs are deterministic.
+    knockout_packets: dict[str, dict[str, Any]] = {}
+    for owner in ko_owners:
+        owner_player = state["players"][owner]
+        opponent = "p2" if owner == "p1" else "p1"
+        owner_active = owner_player["active"]
+        energy_cards = list(owner_active.get("attached_energy_cards", []))
+        tool_cards = list(owner_active.get("attached_tool_cards", []))
+        knocked_out_card = dict(owner_active)
+        knocked_out_card["attached_energy_cards"] = []
+        knocked_out_card["attached_tool_cards"] = []
+        knocked_out_card["energy_attached"] = 0
+        knockout_packets[owner] = {
+            "opponent": opponent,
+            "knocked_out_card": knocked_out_card,
+            "energy_cards": energy_cards,
+            "tool_cards": tool_cards,
+            "prize_value": max(1, int(owner_active.get("prize_value", 1))),
+        }
+
+    for owner in ko_owners:
+        owner_player = state["players"][owner]
+        packet = knockout_packets[owner]
         owner_player["knockouts"] = int(owner_player.get("knockouts", 0)) + 1
-        owner_player.setdefault("discard_pile", []).append(owner_active)
-        owner_player.setdefault("discard_pile", []).extend(owner_active.get("attached_energy_cards", []))
-        owner_player.setdefault("discard_pile", []).extend(owner_active.get("attached_tool_cards", []))
+        owner_player.setdefault("discard_pile", []).append(packet["knocked_out_card"])
+        owner_player.setdefault("discard_pile", []).extend(packet["energy_cards"])
+        owner_player.setdefault("discard_pile", []).extend(packet["tool_cards"])
         events.append(f"{owner}'s Active Pokémon was Knocked Out.")
 
-        prize_value = max(1, int(owner_active.get("prize_value", 1)))
-        if int(opponent_player.get("prizes_remaining", 0)) > 0:
-            prizes_to_take = min(prize_value, len(opponent_player.get("prize_cards", [])))
-            for _ in range(prizes_to_take):
-                prize_card = opponent_player["prize_cards"].pop(0)
-                opponent_player.setdefault("hand_cards", []).append(prize_card)
-            opponent_player["hand_size"] = len(opponent_player.get("hand_cards", []))
-            opponent_player["prizes_remaining"] = len(opponent_player.get("prize_cards", []))
+    for owner in ko_owners:
+        packet = knockout_packets[owner]
+        opponent = packet["opponent"]
+        opponent_player = state["players"][opponent]
+        prizes_to_take = min(packet["prize_value"], len(opponent_player.get("prize_cards", [])))
+        for _ in range(prizes_to_take):
+            prize_card = opponent_player["prize_cards"].pop(0)
+            opponent_player.setdefault("hand_cards", []).append(prize_card)
+        opponent_player["hand_size"] = len(opponent_player.get("hand_cards", []))
+        opponent_player["prizes_remaining"] = len(opponent_player.get("prize_cards", []))
+        if prizes_to_take > 0:
             events.append(
                 f"{opponent} took {prizes_to_take} Prize card(s) ({opponent_player['prizes_remaining']} remaining)."
             )
 
+    for owner in ko_owners:
+        owner_player = state["players"][owner]
         bench = owner_player.get("bench", [])
         if bench:
             promoted = bench.pop(0)
+            promoted["just_played_this_turn"] = False
             owner_player["active"] = promoted
             owner_player["bench_size"] = len(bench)
+            owner_player["out_of_pokemon"] = False
             events.append(f"{owner} promoted {promoted.get('card_name', 'a Benched Pokémon')} to Active.")
         else:
-            owner_player["active"] = create_active_pokemon(hp=0, energy_attached=0, card_name="No Active Pokémon")
+            placeholder = create_active_pokemon(
+                hp=0,
+                energy_attached=0,
+                prize_value=0,
+                card_id=f"{owner}-no-active",
+                card_name="No Active Pokémon",
+            )
+            placeholder["no_active_placeholder"] = True
+            owner_player["active"] = placeholder
             owner_player["bench_size"] = 0
+            owner_player["out_of_pokemon"] = True
             events.append(f"{owner} has no Benched Pokémon left to promote.")
 
     return events
