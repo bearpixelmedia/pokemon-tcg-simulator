@@ -9,6 +9,7 @@ from core.battle_state import zone_conservation_report
 from core.effects import create_demo_state
 from core.fidelity_audit import run_strict_fidelity_audit
 from core.golden_regression import run_golden_suite
+from core.hook_manifest import build_hook_manifest, write_hook_manifest
 from core.legality_snapshot import build_standard_legality_snapshot
 from core.real_game_fidelity import run_real_game_fixture_suite
 from core.setup_engine import run_setup_phase
@@ -81,6 +82,7 @@ def run_quality_gates(
     real_game_fixture_path: str | Path = "tests/fixtures/real_games",
     min_replay_checks: int = 3,
     max_script_hook_share_percent: float = 20.0,
+    auto_build_manifest_if_missing: bool = True,
     update_baseline: bool = False,
     force_refresh: bool = False,
 ) -> dict[str, Any]:
@@ -98,10 +100,23 @@ def run_quality_gates(
 
     replay_results = [verify_seed_replay(turn_limit=8, seed=seed) for seed in (101, 202, 303)[:min_replay_checks]]
     replay_pass = all(result["deterministic"] for result in replay_results)
+    manifest_file = Path(fidelity_manifest_path)
+    manifest_bootstrap: dict[str, Any] = {
+        "path": str(manifest_file),
+        "exists_before": manifest_file.exists(),
+        "auto_built": False,
+        "entry_count": 0,
+    }
+    if auto_build_manifest_if_missing and not manifest_file.exists():
+        manifest_payload = build_hook_manifest(marks=marks, limit_cards=coverage_limit_cards)
+        write_hook_manifest(manifest_payload, path=manifest_file)
+        manifest_bootstrap["auto_built"] = True
+        manifest_bootstrap["entry_count"] = int(manifest_payload.get("entry_count", 0))
+
     fidelity_report = run_strict_fidelity_audit(
         marks=marks,
         limit_cards=coverage_limit_cards,
-        manifest_path=str(fidelity_manifest_path),
+        manifest_path=str(manifest_file),
     )
     fidelity_pass = float(
         fidelity_report.get("script_hook_registration", {}).get("percent", 0.0)
@@ -169,6 +184,7 @@ def run_quality_gates(
         "legality": legality.get("summary", {}),
         "replay_checks": replay_results,
         "strict_fidelity": fidelity_report,
+        "manifest_bootstrap": manifest_bootstrap,
         "fidelity_thresholds": {
             "max_script_hook_share_percent": max_script_hook_share_percent,
             "actual_script_hook_share_percent": script_hook_share,

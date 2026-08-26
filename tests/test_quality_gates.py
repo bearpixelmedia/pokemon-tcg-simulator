@@ -39,7 +39,10 @@ class QualityGateTests(unittest.TestCase):
                 '{"summary":{"text_resolution_percent":60.0}}',
                 encoding="utf-8",
             )
-            report = run_quality_gates(baseline_path=baseline_path)
+            report = run_quality_gates(
+                baseline_path=baseline_path,
+                auto_build_manifest_if_missing=False,
+            )
 
         self.assertFalse(report["quality_pass"])
         self.assertTrue(report["baseline"]["regression_detected"])
