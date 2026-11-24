@@ -135,16 +135,32 @@ def _normalize_action_input(raw_action: dict[str, Any], rng: random.Random) -> d
 def _winner_from_state(state: dict[str, Any]) -> str | None:
     p1 = state["players"]["p1"]
     p2 = state["players"]["p2"]
-    if int(p1.get("prizes_remaining", 6)) <= 0 and int(p2.get("prizes_remaining", 6)) <= 0:
+
+    def _out_of_pokemon(player: dict[str, Any]) -> bool:
+        if bool(player.get("out_of_pokemon", False)):
+            return True
+        active = player.get("active", {})
+        if isinstance(active, dict) and bool(active.get("no_active_placeholder", False)):
+            return True
+        bench = player.get("bench", [])
+        bench_size = len(bench) if isinstance(bench, list) else int(player.get("bench_size", 0))
+        active_hp = int(active.get("hp", 0)) if isinstance(active, dict) else 0
+        return active_hp <= 0 and bench_size <= 0
+
+    p1_win_by_prize = int(p2.get("prizes_remaining", 6)) <= 0
+    p2_win_by_prize = int(p1.get("prizes_remaining", 6)) <= 0
+    p1_win_by_board = _out_of_pokemon(p2)
+    p2_win_by_board = _out_of_pokemon(p1)
+
+    p1_wins = p1_win_by_prize or p1_win_by_board
+    p2_wins = p2_win_by_prize or p2_win_by_board
+
+    if p1_wins and p2_wins:
         return "Draw"
-    if int(p2.get("prizes_remaining", 6)) <= 0:
-        return "AI"
-    if int(p1.get("prizes_remaining", 6)) <= 0:
+    if p1_wins:
         return "You"
-    if int(p1["active"].get("hp", 0)) <= 0 and int(p1.get("bench_size", 0)) <= 0:
+    if p2_wins:
         return "AI"
-    if int(p2["active"].get("hp", 0)) <= 0 and int(p2.get("bench_size", 0)) <= 0:
-        return "You"
     return None
 
 

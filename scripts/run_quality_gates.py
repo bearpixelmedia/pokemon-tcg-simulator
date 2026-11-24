@@ -18,6 +18,8 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--legality-limit-cards", type=int, default=150)
     parser.add_argument("--marks", nargs="+", default=["H", "I", "J"])
     parser.add_argument("--baseline-path", default="artifacts/quality/coverage_baseline.json")
+    parser.add_argument("--real-game-fixture-path", default="tests/fixtures/real_games")
+    parser.add_argument("--max-script-hook-share-percent", type=float, default=20.0)
     parser.add_argument("--output-path", default="artifacts/quality/quality_report.json")
     parser.add_argument("--update-baseline", action="store_true")
     parser.add_argument("--force-refresh", action="store_true")
@@ -31,6 +33,8 @@ def main() -> int:
         legality_limit_cards=args.legality_limit_cards,
         marks=tuple(mark.upper() for mark in args.marks),
         baseline_path=args.baseline_path,
+        real_game_fixture_path=args.real_game_fixture_path,
+        max_script_hook_share_percent=args.max_script_hook_share_percent,
         update_baseline=args.update_baseline,
         force_refresh=args.force_refresh,
     )

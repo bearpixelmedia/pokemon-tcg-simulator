@@ -45,10 +45,53 @@ class RulesMechanicsTests(unittest.TestCase):
         events = resolve_knockouts_and_prizes(state)
         self.assertTrue(any("Knocked Out" in event for event in events))
         self.assertEqual(state["players"]["p1"]["prizes_remaining"], 5)
-        self.assertGreaterEqual(len(state["players"]["p2"]["discard_pile"]), prior_discard + 1)
+        self.assertEqual(len(state["players"]["p2"]["discard_pile"]), prior_discard + 1)
         self.assertTrue(
             any(item.get("card_id") == knocked_out_id for item in state["players"]["p2"]["discard_pile"] if isinstance(item, dict))
         )
+
+    def test_knockout_awards_multi_prize_for_high_value_target(self) -> None:
+        state = create_demo_state()
+        state["players"]["p2"]["active"]["prize_value"] = 2
+        state["players"]["p2"]["active"]["hp"] = 0
+        events = resolve_knockouts_and_prizes(state)
+        self.assertTrue(any("took 2 Prize card(s)" in event for event in events))
+        self.assertEqual(state["players"]["p1"]["prizes_remaining"], 4)
+        self.assertEqual(len(state["players"]["p1"]["hand_cards"]), 7)
+
+    def test_simultaneous_knockouts_award_prizes_to_both_players(self) -> None:
+        state = create_demo_state()
+        state["players"]["p1"]["active"]["hp"] = 0
+        state["players"]["p2"]["active"]["hp"] = 0
+        state["players"]["p1"]["bench"] = [state["players"]["p1"]["bench"][0]]
+        state["players"]["p2"]["bench"] = [state["players"]["p2"]["bench"][0]]
+        state["players"]["p1"]["bench_size"] = 1
+        state["players"]["p2"]["bench_size"] = 1
+
+        events = resolve_knockouts_and_prizes(state)
+
+        self.assertEqual(state["players"]["p1"]["prizes_remaining"], 5)
+        self.assertEqual(state["players"]["p2"]["prizes_remaining"], 5)
+        self.assertEqual(state["players"]["p1"]["bench_size"], 0)
+        self.assertEqual(state["players"]["p2"]["bench_size"], 0)
+        self.assertTrue(any("p1 promoted" in event for event in events))
+        self.assertTrue(any("p2 promoted" in event for event in events))
+
+    def test_no_bench_knockout_marks_player_out_without_repeated_prize_awards(self) -> None:
+        state = create_demo_state()
+        state["players"]["p2"]["active"]["hp"] = 0
+        state["players"]["p2"]["bench"] = []
+        state["players"]["p2"]["bench_size"] = 0
+
+        resolve_knockouts_and_prizes(state)
+        prizes_after_first = state["players"]["p1"]["prizes_remaining"]
+        events_second = resolve_knockouts_and_prizes(state)
+
+        self.assertEqual(prizes_after_first, 5)
+        self.assertEqual(state["players"]["p1"]["prizes_remaining"], 5)
+        self.assertTrue(state["players"]["p2"]["out_of_pokemon"])
+        self.assertTrue(state["players"]["p2"]["active"].get("no_active_placeholder"))
+        self.assertEqual(events_second, [])
 
     def test_damage_reduction_and_prevent_hook(self) -> None:
         state = create_demo_state()

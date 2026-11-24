@@ -30,7 +30,7 @@ jobs:
         run: python -m unittest discover -s tests -p "test_*.py"
 
       - name: Run quality gates
-        run: python scripts/run_quality_gates.py --coverage-limit-cards 120 --legality-limit-cards 120
+        run: python scripts/run_quality_gates.py --coverage-limit-cards 120 --legality-limit-cards 120 --max-script-hook-share-percent 35 --real-game-fixture-path tests/fixtures/real_games
 
       - name: Run scheduled pipeline health
         run: python scripts/run_pipeline_health.py --limit-cards 120
